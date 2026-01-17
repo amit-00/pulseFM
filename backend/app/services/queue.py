@@ -1,8 +1,5 @@
 import json
 from google.cloud import tasks_v2
-from google.protobuf import timestamp_pb2
-from datetime import datetime, timedelta, timezone
-
 
 
 def enqueue_request(
@@ -17,8 +14,7 @@ def enqueue_request(
     parent = client.queue_path(project_id, location, queue_name)
 
     oidc_token = tasks_v2.OidcToken(
-        service_account_email=invoker_sa_email,
-        audience=worker_url,
+        service_account_email=invoker_sa_email
     )
 
     http_request = tasks_v2.HttpRequest(

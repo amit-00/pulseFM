@@ -51,7 +51,7 @@ def validate_uuid(v: str) -> UUID:
         raise ValidationError("Invalid UUID")
 
 class RequestOut(BaseModel):
-    id: Annotated[str, AfterValidator(validate_uuid)]
+    request_id: Annotated[str, AfterValidator(validate_uuid)]
     genre: RequestGenre
     mood: RequestMood
     energy: RequestEnergy
