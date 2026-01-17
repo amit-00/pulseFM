@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter
+
 from app.api.requests import router as requests_router
 from app.api.queue import router as queue_router
 from app.api.stream import router as stream_router
