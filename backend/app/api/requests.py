@@ -1,12 +1,15 @@
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
+from google.cloud.firestore import AsyncClient
+
 
 from app.models.request import RequestCreate, RequestOut, RequestStatus
 from app.storage import add_request_to_queue, get_request_queue
 from app.services.queue import enqueue_request
 from app.config import get_settings, Settings
+from app.services.db import get_db
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -15,6 +18,7 @@ router = APIRouter(prefix="/requests", tags=["requests"])
 async def create_request(
     payload: RequestCreate,
     settings: Settings = Depends(get_settings),
+    db: AsyncClient = Depends(get_db),
 ):
 
     new_request = {
@@ -25,6 +29,9 @@ async def create_request(
         "status": RequestStatus.QUEUED,
         "created_at": datetime.now().isoformat()
     }
+
+    doc_ref = db.collection("requests").document(document_id=new_request["id"])
+    await doc_ref.set(new_request)
 
     enqueue_request(
         project_id=settings.project_id,
