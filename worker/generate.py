@@ -14,7 +14,7 @@ app = FastAPI()
 class GenerateRequest(BaseModel):
     request_id: Annotated[
         str, 
-        AfterValidator(lambda x: str(uuid.uuid4()))
+        AfterValidator(lambda x: str(uuid.UUID(x)))
     ]
 
 
@@ -22,12 +22,12 @@ class GenerateRequest(BaseModel):
 async def generate(payload: GenerateRequest):
     request_ref = db.collection("requests").document(payload.request_id)
     request = await request_ref.get()
-
+    
     if not request.exists:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    request_ref.set({
+    await request_ref.set({
         "status": "generating"
-    })
+    }, merge=True)
 
     return Response(status_code=204)
