@@ -14,7 +14,8 @@ def enqueue_request(
     parent = client.queue_path(project_id, location, queue_name)
 
     oidc_token = tasks_v2.OidcToken(
-        service_account_email=invoker_sa_email
+        service_account_email=invoker_sa_email,
+        audience=worker_url
     )
 
     http_request = tasks_v2.HttpRequest(

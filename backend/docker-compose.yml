@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pulsefm-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - PROJECT_ID=${PROJECT_ID}
+      - LOCATION=${LOCATION}
+      - QUEUE_NAME=${QUEUE_NAME}
+      - GEN_WORKER_URL=${GEN_WORKER_URL}
+      - INVOKER_SA_EMAIL=${INVOKER_SA_EMAIL}
+      - PYTHONUNBUFFERED=1
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+    volumes:
+      # Mount source code for development (optional - comment out for production)
+      - ./app:/app/app
+      - ./requirements.txt:/app/requirements.txt
+      # Mount Google Cloud service account credentials for ADC
+      - ./credentials/service-account-key.json:/app/credentials/service-account-key.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
