@@ -34,14 +34,14 @@ class RequestMood(str, Enum):
 
 class RequestEnergy(str, Enum):
     LOW = "low"
-    MEDIUM = "medium"
+    MID = "mid"
     HIGH = "high"
 
 
 class RequestCreate(BaseModel):
     genre: RequestGenre
     mood: RequestMood
-    energy: RequestEnergy = RequestEnergy.MEDIUM
+    energy: RequestEnergy = RequestEnergy.MID
 
 
 def validate_uuid(v: str) -> UUID:
