@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Annotated
 from contextlib import asynccontextmanager
 import asyncio
+import tempfile
 
 from fastapi import FastAPI, HTTPException, Response
 from google.cloud.storage import Bucket
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("STORAGE_BUCKET")
 ASSET_PATH = Path("/app/assets")
+STUBS_FOLDER = "stubbed"
 
 
 def init_bucket() -> Bucket:
@@ -61,6 +63,28 @@ async def upload_file_to_gcs(bucket: Bucket, local_path: Path, object_name: str)
         return await asyncio.to_thread(_upload_to_gcs, bucket, local_path, object_name)
     except Exception as e:
         logger.error(f"Error in async upload to GCS: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _download_from_gcs(bucket: Bucket, object_name: str, local_path: Path) -> Path:
+    logger.info(f"Downloading file from GCS: {object_name} -> {local_path}")
+    try:
+        blob = bucket.blob(object_name)
+        if not blob.exists():
+            raise FileNotFoundError(f"File not found in GCS: {object_name}")
+        blob.download_to_filename(str(local_path))
+        logger.info(f"Successfully downloaded file from GCS: {object_name}")
+        return local_path
+    except Exception as e:
+        logger.error(f"Failed to download file from GCS: {e}", exc_info=True)
+        raise
+
+
+async def download_file_from_gcs(bucket: Bucket, object_name: str, local_path: Path) -> Path:
+    try:
+        return await asyncio.to_thread(_download_from_gcs, bucket, object_name, local_path)
+    except Exception as e:
+        logger.error(f"Error in async download from GCS: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -106,29 +130,48 @@ class GenerateRequest(BaseModel):
     ]
 
 
-def select_asset(energy: str):
-    asset_path = ASSET_PATH / f"{energy}.wav"
-    logger.debug(f"Selected asset for energy '{energy}': {asset_path}")
-    return asset_path
+async def select_asset(bucket: Bucket, energy: str) -> Path:
+    """Download asset file from GCS bucket /stubs folder"""
+    object_name = f"{STUBS_FOLDER}/{energy}.wav"
+    logger.debug(f"Downloading asset for energy '{energy}' from GCS: {object_name}")
+    
+    # Create a temporary file to store the downloaded asset
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    
+    try:
+        await download_file_from_gcs(bucket, object_name, temp_path)
+        logger.debug(f"Successfully downloaded asset: {temp_path}")
+        return temp_path
+    except Exception as e:
+        # Clean up temp file on error
+        if temp_path.exists():
+            os.remove(temp_path)
+        raise
 
 
-def generate_music(request: dict):
+async def generate_music(bucket: Bucket, request: dict):
     request_id = request['request_id']
     energy = request["energy"]
     logger.info(f"Generating music for request {request_id} with energy '{energy}'")
     
     output_path = ASSET_PATH / f"{request_id}.wav"
-    asset = select_asset(energy)
+    asset = await select_asset(bucket, energy)
     
-    if not asset.exists():
-        logger.error(f"Asset file not found: {asset}")
-        raise FileNotFoundError(f"Asset file not found: {asset}")
-    
-    logger.debug(f"Copying asset from {asset} to {output_path}")
-    shutil.copy(asset, output_path)
-    logger.info(f"Successfully generated music file: {output_path}")
-
-    return output_path
+    try:
+        logger.debug(f"Copying asset from {asset} to {output_path}")
+        shutil.copy(asset, output_path)
+        logger.info(f"Successfully generated music file: {output_path}")
+        return output_path
+    finally:
+        # Clean up downloaded asset file
+        if asset.exists():
+            try:
+                os.remove(asset)
+                logger.debug(f"Cleaned up downloaded asset file: {asset}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up asset file {asset}: {e}")
 
 
 @app.post("/generate")
@@ -158,7 +201,7 @@ async def generate(payload: GenerateRequest):
         request_data = request.to_dict()
         logger.debug(f"Request data: {request_data}")
         
-        wav_path = generate_music(request_data)
+        wav_path = await generate_music(bucket, request_data)
         output_url = await upload_file_to_gcs(bucket, wav_path, f"{request_id}.wav")
 
         logger.info(f"Updating request {request_id} status to 'completed' with output_url: {output_url}")
@@ -185,7 +228,7 @@ async def generate(payload: GenerateRequest):
 
     # Succesful generation
     try:
-        request_ref.set({
+        await request_ref.set({
             "status": "ready",
             "output_url": output_url
         }, merge=True)
