@@ -9,6 +9,7 @@ services:
     environment:
       - PORT=8080
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
+      - STORAGE_BUCKET=pulsefm-generated-music
     volumes:
       - ./credentials/service-account-key.json:/app/credentials/service-account-key.json:ro
     restart: unless-stopped

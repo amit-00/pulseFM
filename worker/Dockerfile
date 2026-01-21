@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY generate.py .
 
+# Copy assets
+COPY assets/ assets/
+
 # Copy entrypoint script
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
