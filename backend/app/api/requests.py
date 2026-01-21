@@ -1,14 +1,12 @@
-from uuid import UUID, uuid4
+from uuid import uuid4
 from datetime import datetime, timezone
-import json
 
-from fastapi import APIRouter, HTTPException, Response, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from google.cloud.firestore import AsyncClient
 
 
 from app.models.request import RequestCreate, RequestOut, RequestStatus
-from app.storage import get_request_queue
-from app.services.queue import enqueue_request
+from app.services.cloud_tasks import enqueue_request
 from app.config import get_settings, Settings
 from app.services.db import get_db
 

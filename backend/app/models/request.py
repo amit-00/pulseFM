@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from uuid import UUID
-from typing import Annotated
+from typing import Annotated, List
 from pydantic import BaseModel, AfterValidator, ValidationError
 
 class RequestStatus(str, Enum):
@@ -44,11 +44,17 @@ class RequestCreate(BaseModel):
     energy: RequestEnergy = RequestEnergy.MID
 
 
+class RequestQueueOut(BaseModel):
+    now_playing: str
+    next_up: List[str]
+
+
 def validate_uuid(v: str) -> UUID:
     try:
         return str(UUID(v))
     except ValueError:
         raise ValidationError("Invalid UUID")
+
 
 class RequestOut(BaseModel):
     request_id: Annotated[str, AfterValidator(validate_uuid)]
