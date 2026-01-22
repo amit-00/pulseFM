@@ -5,18 +5,26 @@ from app.api.requests import router as requests_router
 from app.api.queue import router as queue_router
 from app.api.stream import router as stream_router
 from app.core.scheduler import get_scheduler
+from app.core.playback import get_playback_engine
 from app.services.db import get_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage scheduler lifecycle with FastAPI app."""
+    """Manage scheduler and playback engine lifecycle with FastAPI app."""
     # Startup
     db = await get_db()
     scheduler = get_scheduler(db)
     await scheduler.start()
+    
+    # Start playback engine
+    playback_engine = get_playback_engine(scheduler)
+    await playback_engine.start()
+    
     yield
+    
     # Shutdown
+    await playback_engine.stop()
     await scheduler.stop()
 
 
