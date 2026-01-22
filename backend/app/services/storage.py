@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
@@ -65,7 +65,7 @@ def generate_signed_url(blob_path: str, expiration_seconds: int = 3600) -> str:
         
         # Calculate expiration as datetime (not Unix timestamp)
         # The expiration parameter expects a datetime object, not seconds
-        expiration = datetime.utcnow() + timedelta(seconds=expiration_seconds)
+        expiration = datetime.now(timezone.utc) + timedelta(seconds=expiration_seconds)
         
         # Generate signed URL with datetime expiration
         signed_url = blob.generate_signed_url(
