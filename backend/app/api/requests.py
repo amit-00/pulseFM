@@ -42,7 +42,6 @@ async def create_request(
             payload=new_request,
         )
     except Exception as e:
-        print(f"Error enqueuing request: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     return new_request

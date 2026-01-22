@@ -5,9 +5,11 @@ from typing import Annotated, List
 from pydantic import BaseModel, AfterValidator, ValidationError
 
 class RequestStatus(str, Enum):
+    PENDING = "pending"
     QUEUED = "queued"
     GENERATING = "generating"
     READY = "ready"
+    PLAYING = "playing"
     PLAYED = "played"
     FAILED = "failed"
 
@@ -47,6 +49,17 @@ class RequestCreate(BaseModel):
 class RequestQueueOut(BaseModel):
     now_playing: str
     next_up: List[str]
+
+
+class ReadyRequest(BaseModel):
+    request_id: str
+    genre: RequestGenre
+    mood: RequestMood
+    energy: RequestEnergy
+    status: RequestStatus
+    created_at: str
+    audio_url: str
+    stubbed: bool = False
 
 
 def validate_uuid(v: str) -> UUID:
