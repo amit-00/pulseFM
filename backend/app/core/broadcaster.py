@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Dict, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +91,21 @@ class StreamBroadcaster():
         
         # Remove dropped subscribers
         if dropped_subscribers:
-            async with self._lock:
-                for subscriber_id in dropped_subscribers:
-                    if subscriber_id in self._subscribers:
-                        del self._subscribers[subscriber_id]
-                        self._subscriber_count -= 1
-                        logger.info(f"Removed subscriber {subscriber_id} (total subscribers: {self._subscriber_count})")
+            await self.drop_subscribers(dropped_subscribers)
+            
+    async def drop_subscribers(self, subscriber_ids: List[str]) -> None:
+        """
+        Drop a list of subscribers.
+        
+        Args:
+            subscriber_ids: List of subscriber IDs to drop
+        """
+        async with self._lock:
+            for subscriber_id in subscriber_ids:
+                if subscriber_id in self._subscribers:
+                    del self._subscribers[subscriber_id]
+                    self._subscriber_count -= 1
+                    logger.info(f"Removed subscriber {subscriber_id} (total subscribers: {self._subscriber_count})")
     
     async def subscribe(self) -> Tuple[str, asyncio.Queue]:
         """
