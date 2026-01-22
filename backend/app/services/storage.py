@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
@@ -57,18 +58,22 @@ def generate_signed_url(blob_path: str, expiration_seconds: int = 3600) -> str:
     try:
         bucket_name, blob_name = parse_gcs_path(blob_path)
         
-        # Initialize GCS client
+        # Initialize GCS client (uses GOOGLE_APPLICATION_CREDENTIALS automatically)
         client = storage.Client()
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         
-        # Generate signed URL
+        # Calculate expiration as datetime (not Unix timestamp)
+        # The expiration parameter expects a datetime object, not seconds
+        expiration = datetime.utcnow() + timedelta(seconds=expiration_seconds)
+        
+        # Generate signed URL with datetime expiration
         signed_url = blob.generate_signed_url(
-            expiration=expiration_seconds,
+            expiration=expiration,
             method="GET"
         )
         
-        logger.debug(f"Generated signed URL for {blob_path} (expires in {expiration_seconds}s)")
+        logger.info(f"Generated signed URL for {blob_path} (expires at {expiration.isoformat()}, {expiration_seconds}s from now)")
         return signed_url
         
     except ValueError as e:

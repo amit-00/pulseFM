@@ -4,7 +4,7 @@ from typing import Optional
 from google.cloud.firestore import AsyncClient
 
 from app.core.scheduler import TrackScheduler
-from app.core.broadcaster import Broadcaster, PlaceholderBroadcaster
+from app.core.broadcaster import StreamBroadcaster
 from app.models.request import ReadyRequest
 from app.services.storage import generate_signed_url
 
@@ -17,7 +17,7 @@ class PlaybackEngine:
     def __init__(
         self,
         scheduler: TrackScheduler,
-        broadcaster: Optional[Broadcaster] = None,
+        broadcaster: Optional[StreamBroadcaster] = None,
         chunk_size: int = 8192
     ):
         """
@@ -25,11 +25,11 @@ class PlaybackEngine:
         
         Args:
             scheduler: TrackScheduler instance to get tracks from
-            broadcaster: Broadcaster instance (defaults to PlaceholderBroadcaster)
+            broadcaster: StreamBroadcaster instance (defaults to StreamBroadcaster)
             chunk_size: Size of chunks to read from ffmpeg stdout (default: 8KB)
         """
         self.scheduler = scheduler
-        self.broadcaster = broadcaster or PlaceholderBroadcaster()
+        self.broadcaster = broadcaster or StreamBroadcaster()
         self.chunk_size = chunk_size
         self._running = False
         self._playback_task: Optional[asyncio.Task] = None
@@ -44,9 +44,6 @@ class PlaybackEngine:
         
         self._running = True
         logger.info("Starting playback engine...")
-        
-        # Start broadcaster
-        await self.broadcaster.start()
         
         # Start playback loop
         self._playback_task = asyncio.create_task(self._playback_loop())
@@ -230,7 +227,7 @@ playback_engine_instance: Optional[PlaybackEngine] = None
 
 def get_playback_engine(
     scheduler: Optional[TrackScheduler] = None,
-    broadcaster: Optional[Broadcaster] = None
+    broadcaster: Optional[StreamBroadcaster] = None
 ) -> PlaybackEngine:
     """Get or create the singleton playback engine instance."""
     global playback_engine_instance

@@ -6,6 +6,7 @@ from app.api.queue import router as queue_router
 from app.api.stream import router as stream_router
 from app.core.scheduler import get_scheduler
 from app.core.playback import get_playback_engine
+from app.core.broadcaster import StreamBroadcaster
 from app.services.db import get_db
 
 
@@ -17,14 +18,22 @@ async def lifespan(app: FastAPI):
     scheduler = get_scheduler(db)
     await scheduler.start()
     
-    # Start playback engine
-    playback_engine = get_playback_engine(scheduler)
+    # Create and start broadcaster
+    broadcaster = StreamBroadcaster()
+    await broadcaster.start()
+    
+    # Store broadcaster in app state for endpoint access
+    app.state.broadcaster = broadcaster
+    
+    # Start playback engine with broadcaster
+    playback_engine = get_playback_engine(scheduler, broadcaster)
     await playback_engine.start()
     
     yield
     
     # Shutdown
     await playback_engine.stop()
+    await broadcaster.stop()
     await scheduler.stop()
 
 
