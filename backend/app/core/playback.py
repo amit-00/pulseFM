@@ -35,6 +35,9 @@ class PlaybackEngine:
         self._playback_task: Optional[asyncio.Task] = None
         self._current_process: Optional[asyncio.subprocess.Process] = None
         self._current_track: Optional[ReadyRequest] = None
+
+        self.audio_bitrate = 128000
+        self.audio_bytes_per_second = self.audio_bitrate / 8
     
     async def start(self):
         """Start the playback engine."""
@@ -199,9 +202,18 @@ class PlaybackEngine:
                 if not chunk:
                     # EOF reached
                     break
+
+                chunk_size = len(chunk)
+                chunk_seconds = chunk_size / self.audio_bytes_per_second
+
+                start_time = asyncio.get_event_loop().time()
                 
-                # Publish chunk to broadcaster
+                # Publish chunk to broadcaster 
                 await self.broadcaster.publish_chunk(chunk)
+
+                publish_delay = asyncio.get_event_loop().time() - start_time
+
+                await asyncio.sleep(chunk_seconds - publish_delay)
                 
         except Exception as e:
             logger.error(f"Error streaming chunks: {e}", exc_info=True)
