@@ -1,12 +1,11 @@
 import asyncio
 import logging
 from typing import Optional
-from google.cloud.firestore import AsyncClient
 
 from app.core.scheduler import TrackScheduler
 from app.core.broadcaster import StreamBroadcaster
 from app.models.request import ReadyRequest
-from app.services.storage import generate_signed_url
+from app.services.encoder import encode_stream, OutputFormat
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,6 @@ class PlaybackEngine:
         self.chunk_size = chunk_size
         self._running = False
         self._playback_task: Optional[asyncio.Task] = None
-        self._current_process: Optional[asyncio.subprocess.Process] = None
         self._current_track: Optional[ReadyRequest] = None
 
         self.audio_bitrate = 128000
@@ -72,9 +70,6 @@ class PlaybackEngine:
             except asyncio.CancelledError:
                 pass
         
-        # Stop broadcaster
-        await self.broadcaster.stop()
-        
         logger.info("Playback engine stopped")
     
     async def _playback_loop(self):
@@ -110,127 +105,57 @@ class PlaybackEngine:
     
     async def _process_track(self, track: ReadyRequest):
         """
-        Process a single track: generate signed URL, transcode, and stream.
+        Process a single track: encode and stream using the encoder service.
         
         Args:
             track: ReadyRequest to process
         """
-        signed_url = None
-        process = None
-        
         try:
-            # Generate signed URL from GCS blob path
-            logger.debug(f"Generating signed URL for {track.audio_url}")
-            signed_url = generate_signed_url(track.audio_url, expiration_seconds=3600)
-            logger.debug(f"Generated signed URL (length: {len(signed_url)})")
+            logger.debug(f"Starting encoding for track {track.request_id}")
             
-            # Launch ffmpeg subprocess
-            # Command: ffmpeg -i <signed_url> -f adts -acodec aac -b:a 128k -ar 44100 -ac 2 -
-            # -f adts: Output format is AAC ADTS
-            # -acodec aac: Audio codec is AAC
-            # -b:a 128k: Audio bitrate 128kbps
-            # -ar 44100: Sample rate 44.1kHz
-            # -ac 2: Stereo (2 channels)
-            # -: Output to stdout
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-i", signed_url,
-                "-f", "adts",
-                "-acodec", "aac",
-                "-b:a", "128k",
-                "-ar", "44100",
-                "-ac", "2",
-                "-"  # Output to stdout
-            ]
+            # Use encoder service to get encoded audio chunks
+            async for chunk in encode_stream(
+                blob_path=track.audio_url,
+                output_format=OutputFormat.ADTS,
+                bitrate=self.audio_bitrate,
+                sample_rate=44100,
+                channels=2,
+                chunk_size=self.chunk_size
+            ):
+                # Stream chunks with rate limiting
+                await self._stream_chunk(chunk)
             
-            logger.debug(f"Launching ffmpeg: {' '.join(ffmpeg_cmd[:3])} <url> ...")
-            
-            process = await asyncio.create_subprocess_exec(
-                *ffmpeg_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            self._current_process = process
-            
-            # Read chunks from ffmpeg stdout and publish to broadcaster
-            await self._stream_chunks(process)
-            
-            # Wait for process to complete
-            return_code = await process.wait()
-            
-            if return_code != 0:
-                # Read stderr for error details
-                stderr_output = await process.stderr.read()
-                error_msg = stderr_output.decode('utf-8', errors='ignore')
-                logger.error(f"FFmpeg process failed with return code {return_code}: {error_msg}")
-                raise RuntimeError(f"FFmpeg transcoding failed: {error_msg}")
-            
-            logger.debug(f"FFmpeg process completed successfully for track {track.request_id}")
+            logger.debug(f"Encoding completed successfully for track {track.request_id}")
             
         except Exception as e:
             logger.error(f"Error processing track {track.request_id}: {e}", exc_info=True)
             raise
-        finally:
-            # Cleanup: kill process if still running
-            if process and process.returncode is None:
-                logger.warning(f"Terminating ffmpeg process for track {track.request_id}")
-                process.terminate()
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.warning(f"FFmpeg process did not terminate, killing it")
-                    process.kill()
-                    await process.wait()
-            
-            self._current_process = None
     
-    async def _stream_chunks(self, process: asyncio.subprocess.Process):
+    async def _stream_chunk(self, chunk: bytes):
         """
-        Read chunks from ffmpeg stdout and publish to broadcaster.
+        Stream a single chunk to the broadcaster with rate limiting.
         
         Args:
-            process: FFmpeg subprocess with stdout pipe
+            chunk: Audio data chunk to publish
         """
-        if process.stdout is None:
-            raise ValueError("Process stdout is None")
+        if not self._running:
+            return
         
-        try:
-            while self._running:
-                chunk = await process.stdout.read(self.chunk_size)
-                
-                if not chunk:
-                    # EOF reached
-                    break
+        chunk_size = len(chunk)
+        chunk_seconds = chunk_size / self.audio_bytes_per_second
 
-                chunk_size = len(chunk)
-                chunk_seconds = chunk_size / self.audio_bytes_per_second
+        start_time = asyncio.get_event_loop().time()
+        
+        # Publish chunk to broadcaster 
+        await self.broadcaster.publish_chunk(chunk)
 
-                start_time = asyncio.get_event_loop().time()
-                
-                # Publish chunk to broadcaster 
-                await self.broadcaster.publish_chunk(chunk)
+        publish_delay = asyncio.get_event_loop().time() - start_time
 
-                publish_delay = asyncio.get_event_loop().time() - start_time
-
-                await asyncio.sleep(chunk_seconds - publish_delay)
-                
-        except Exception as e:
-            logger.error(f"Error streaming chunks: {e}", exc_info=True)
-            raise
+        await asyncio.sleep(chunk_seconds - publish_delay)
     
     async def _stop_current_playback(self):
         """Stop the current playback if any."""
-        if self._current_process and self._current_process.returncode is None:
-            logger.info("Stopping current playback...")
-            self._current_process.terminate()
-            try:
-                await asyncio.wait_for(self._current_process.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("Process did not terminate, killing it")
-                self._current_process.kill()
-                await self._current_process.wait()
-            self._current_process = None
+        logger.debug("Stop current playback requested (cleanup handled by encoder)")
 
 
 # Singleton instance
