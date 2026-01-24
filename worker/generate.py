@@ -150,7 +150,7 @@ async def encode_file_to_m4a(
             file_url=str(input_path),
             output_format=OutputFormat.M4A,
             bitrate=128000,
-            sample_rate=44100,
+            sample_rate=48000,
             channels=2
         ):
             chunks.append(chunk)
@@ -318,6 +318,63 @@ async def generate(payload: GenerateRequest):
             "audio_url": audio_url,
             "duration_ms": duration_ms
         }, merge=True)
+    except Exception as e:
+        logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
+        await fail_request(request_ref, "Failed to update request status in Firestore")
+
+    logger.info(f"Successfully completed generate request for {request_id}")
+    return Response(status_code=204)
+
+
+@app.post("/generate-stubbed")
+async def generate(payload: GenerateRequest):
+    request_id = payload.request_id
+    logger.info(f"Received generate request for request_id: {request_id}")
+    
+    db: firestore.AsyncClient = app.state.db
+    bucket: Bucket = app.state.bucket
+
+    request_ref = db.collection("requests").document(request_id)
+    logger.debug(f"Fetching request document: {request_id}")
+    request = await request_ref.get()
+    
+    if not request.exists:
+        logger.warning(f"Request not found: {request_id}")
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    audio_url = None
+
+    try:
+        request_data = request.to_dict()
+        
+        # Download asset, encode to .m4a, and upload to GCS
+        # Uses temp files with automatic cleanup
+        source_object_name = f"{STUBS_FOLDER}/{request_data['energy']}.wav"
+        audio_url, duration_ms = await download_encode_and_upload(
+            bucket,
+            source_object_name,
+            f"{request_id}.m4a"
+        )
+            
+    except Exception as e:
+        logger.error(f"Error processing request {request_id}: {e}", exc_info=True)
+        await fail_request(request_ref, str(e))
+
+    if audio_url is None:
+        logger.error(f"Output URL is None for request {request_id}")
+        await fail_request(request_ref, "Failed to generate music")
+
+    stub_ref = db.collection("stubbed").document(request_id)
+    stub_data = {
+        **request_data,
+        "audio_url": audio_url,
+        "duration_ms": duration_ms,
+        "status": "ready"
+    }
+
+    # Succesful generation
+    try:    
+        await stub_ref.set(stub_data, merge=True)
     except Exception as e:
         logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
         await fail_request(request_ref, "Failed to update request status in Firestore")

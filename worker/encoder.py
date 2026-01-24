@@ -64,11 +64,9 @@ async def encode_stream(
                 audio.export(
                     buffer,
                     format="mp4",
-                    codec="libopus",
+                    codec="aac",
                     bitrate=bitrate_kbps
                 )
-            else:
-                raise ValueError(f"Unsupported output format: {output_format}")
             
             # Get the encoded data
             buffer.seek(0)
