@@ -13,6 +13,7 @@ from pydantic import BaseModel, AfterValidator
 from google.cloud import firestore
 from google.cloud import storage
 from dotenv import load_dotenv
+from pydub import AudioSegment
 
 from encoder import encode_stream, OutputFormat
 
@@ -175,6 +176,10 @@ async def encode_file_to_m4a(
         raise
 
 
+async def get_duration_ms(file_path: Path) -> int:
+    audio = AudioSegment.from_file(file_path)
+    return len(audio)
+
 async def download_encode_and_upload(
     bucket: Bucket,
     source_object_name: str,
@@ -212,6 +217,8 @@ async def download_encode_and_upload(
         logger.debug(f"Encoding {source_path} to {encoded_path}")
         await encode_file_to_m4a(source_path, encoded_path)
         logger.debug(f"Encoded to {encoded_path}")
+
+        duration_ms = await asyncio.to_thread(get_duration_ms, encoded_path)
         
         # Step 3: Upload encoded file to GCS
         logger.debug(f"Uploading {encoded_path} to GCS as {dest_object_name}")
@@ -223,7 +230,7 @@ async def download_encode_and_upload(
         )
         logger.info(f"Successfully processed and uploaded: {gs_url}")
         
-        return gs_url
+        return gs_url, duration_ms
         
     except Exception as e:
         logger.error(f"Failed to download, encode, and upload: {e}", exc_info=True)
@@ -281,7 +288,7 @@ async def generate(payload: GenerateRequest):
         "status": "generating"
     }, merge=True)
 
-    output_url = None
+    audio_url = None
 
     try:
         request_data = request.to_dict()
@@ -290,23 +297,17 @@ async def generate(payload: GenerateRequest):
         # Download asset, encode to .m4a, and upload to GCS
         # Uses temp files with automatic cleanup
         source_object_name = f"{STUBS_FOLDER}/{request_data['energy']}.wav"
-        output_url = await download_encode_and_upload(
+        audio_url, duration_ms = await download_encode_and_upload(
             bucket,
             source_object_name,
             f"{request_id}.m4a"
         )
-
-        logger.info(f"Updating request {request_id} status to 'completed' with output_url: {output_url}")
-        await request_ref.set({
-            "status": "completed",
-            "output_url": output_url
-        }, merge=True)
             
     except Exception as e:
         logger.error(f"Error processing request {request_id}: {e}", exc_info=True)
         await fail_request(request_ref, str(e))
 
-    if output_url is None:
+    if audio_url is None:
         logger.error(f"Output URL is None for request {request_id}")
         await fail_request(request_ref, "Failed to generate music")
 
@@ -314,7 +315,8 @@ async def generate(payload: GenerateRequest):
     try:
         await request_ref.set({
             "status": "ready",
-            "output_url": output_url
+            "audio_url": audio_url,
+            "duration_ms": duration_ms
         }, merge=True)
     except Exception as e:
         logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
