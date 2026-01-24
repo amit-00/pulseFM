@@ -4,6 +4,8 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y ffmpeg
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
@@ -12,6 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY generate.py .
+
+# Copy encoder code
+COPY encoder.py .
 
 # Copy assets
 COPY assets/ assets/
