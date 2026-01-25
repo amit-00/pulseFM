@@ -59,6 +59,7 @@ class ReadyRequest(BaseModel):
     status: RequestStatus
     created_at: str
     audio_url: str
+    duration_ms: int
     stubbed: bool = False
 
 

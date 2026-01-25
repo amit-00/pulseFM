@@ -1,13 +1,21 @@
+import logging
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter
 
 from app.api.requests import router as requests_router
-from app.api.queue import router as queue_router
 from app.api.stream import router as stream_router
-from app.core.scheduler import get_scheduler
-from app.core.playback import get_playback_engine
-from app.core.broadcaster import StreamBroadcaster
+from app.core.station import Station
 from app.services.db import get_db
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -15,34 +23,21 @@ async def lifespan(app: FastAPI):
     """Manage scheduler and playback engine lifecycle with FastAPI app."""
     # Startup
     db = await get_db()
-    scheduler = get_scheduler(db)
-    await scheduler.start()
-    
-    # Create and start broadcaster
-    broadcaster = StreamBroadcaster()
-    await broadcaster.start()
-    
-    # Store broadcaster in app state for endpoint access
-    app.state.broadcaster = broadcaster
-    
-    # Start playback engine with broadcaster
-    playback_engine = get_playback_engine(scheduler, broadcaster)
-    await playback_engine.start()
+    station = Station(db)
+    await station.start()
+    app.state.station = station
     
     yield
     
     # Shutdown
-    await playback_engine.stop()
-    await broadcaster.stop()
-    await scheduler.stop()
+    await station.stop()
 
 
 app = FastAPI(title="PulseFM Backend", version="1.0.0", lifespan=lifespan)
 
-api_router = APIRouter(prefix="/api/v1")
+api_router = APIRouter(prefix="/api")
 
 api_router.include_router(requests_router)
-api_router.include_router(queue_router)
 api_router.include_router(stream_router)
 app.include_router(api_router)
 

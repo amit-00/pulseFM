@@ -1,9 +1,8 @@
 from uuid import uuid4
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from google.cloud.firestore import AsyncClient
-
 
 from app.models.request import RequestCreate, RequestOut, RequestStatus
 from app.services.cloud_tasks import enqueue_request
@@ -38,6 +37,36 @@ async def create_request(
             location=settings.location,
             queue_name=settings.queue_name,
             worker_url=settings.gen_worker_url,
+            invoker_sa_email=settings.invoker_sa_email,
+            payload=new_request,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return new_request
+
+
+@router.post("/stub", response_model=RequestOut)
+async def stub_request(payload: RequestCreate, settings: Settings = Depends(get_settings), db: AsyncClient = Depends(get_db)):
+    new_request = {
+        "request_id": str(uuid4()),
+        "genre": payload.genre,
+        "mood": payload.mood,
+        "energy": payload.energy,
+        "status": RequestStatus.PENDING,
+        "stubbed": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    doc_ref = db.collection("requests").document(document_id=new_request["request_id"])
+    await doc_ref.set(new_request)
+
+    try:
+        enqueue_request(
+            project_id=settings.project_id,
+            location=settings.location,
+            queue_name=settings.queue_name,
+            worker_url="https://musicgen-worker-156730433405.northamerica-northeast1.run.app/generate-stubbed",
             invoker_sa_email=settings.invoker_sa_email,
             payload=new_request,
         )
