@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 import asyncio
 import tempfile
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response
 from google.cloud.storage import Bucket
 from pydantic import BaseModel, AfterValidator
 from google.cloud import firestore
@@ -99,30 +99,6 @@ async def fail_request(request_ref: firestore.DocumentReference, error: str):
         logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
     raise HTTPException(status_code=500, detail=error)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Starting application lifespan")
-    try:
-        bucket: Bucket = init_bucket()
-        app.state.bucket = bucket
-
-        logger.info("Initializing Firestore client")
-        db: firestore.AsyncClient = firestore.AsyncClient()
-        app.state.db = db
-        logger.info("Application startup complete")
-
-        yield
-    except Exception as e:
-        logger.error(f"Error during application startup: {e}", exc_info=True)
-        raise
-    finally:
-        logger.info("Application shutdown")
-
-
-app = FastAPI(lifespan=lifespan)
-
-
 class GenerateRequest(BaseModel):
     request_id: Annotated[
         str, 
@@ -176,7 +152,7 @@ async def encode_file_to_m4a(
         raise
 
 
-async def get_duration_ms(file_path: Path) -> int:
+def get_duration_ms(file_path: Path) -> int:
     audio = AudioSegment.from_file(file_path)
     return len(audio)
 
@@ -265,6 +241,11 @@ async def download_encode_and_upload(
             logger.warning(f"Some temp files could not be cleaned up (non-fatal): {len(cleanup_errors)} errors")
 
 
+bucket: Bucket = init_bucket()
+db: firestore.AsyncClient = firestore.AsyncClient()
+
+
+app = FastAPI()
 
 
 @app.post("/generate")
@@ -272,9 +253,6 @@ async def generate(payload: GenerateRequest):
     request_id = payload.request_id
     logger.info(f"Received generate request for request_id: {request_id}")
     
-    db: firestore.AsyncClient = app.state.db
-    bucket: Bucket = app.state.bucket
-
     request_ref = db.collection("requests").document(request_id)
     logger.debug(f"Fetching request document: {request_id}")
     request = await request_ref.get()
@@ -318,63 +296,6 @@ async def generate(payload: GenerateRequest):
             "audio_url": audio_url,
             "duration_ms": duration_ms
         }, merge=True)
-    except Exception as e:
-        logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
-        await fail_request(request_ref, "Failed to update request status in Firestore")
-
-    logger.info(f"Successfully completed generate request for {request_id}")
-    return Response(status_code=204)
-
-
-@app.post("/generate-stubbed")
-async def generate(payload: GenerateRequest):
-    request_id = payload.request_id
-    logger.info(f"Received generate request for request_id: {request_id}")
-    
-    db: firestore.AsyncClient = app.state.db
-    bucket: Bucket = app.state.bucket
-
-    request_ref = db.collection("requests").document(request_id)
-    logger.debug(f"Fetching request document: {request_id}")
-    request = await request_ref.get()
-    
-    if not request.exists:
-        logger.warning(f"Request not found: {request_id}")
-        raise HTTPException(status_code=404, detail="Request not found")
-
-    audio_url = None
-
-    try:
-        request_data = request.to_dict()
-        
-        # Download asset, encode to .m4a, and upload to GCS
-        # Uses temp files with automatic cleanup
-        source_object_name = f"{STUBS_FOLDER}/{request_data['energy']}.wav"
-        audio_url, duration_ms = await download_encode_and_upload(
-            bucket,
-            source_object_name,
-            f"{request_id}.m4a"
-        )
-            
-    except Exception as e:
-        logger.error(f"Error processing request {request_id}: {e}", exc_info=True)
-        await fail_request(request_ref, str(e))
-
-    if audio_url is None:
-        logger.error(f"Output URL is None for request {request_id}")
-        await fail_request(request_ref, "Failed to generate music")
-
-    stub_ref = db.collection("stubbed").document(request_id)
-    stub_data = {
-        **request_data,
-        "audio_url": audio_url,
-        "duration_ms": duration_ms,
-        "status": "ready"
-    }
-
-    # Succesful generation
-    try:    
-        await stub_ref.set(stub_data, merge=True)
     except Exception as e:
         logger.error(f"Failed to update request status in Firestore: {e}", exc_info=True)
         await fail_request(request_ref, "Failed to update request status in Firestore")
