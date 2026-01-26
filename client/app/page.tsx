@@ -3,7 +3,12 @@
 import { useStreamPlayer } from "../hooks/useStreamPlayer";
 
 export default function Home() {
-  const { isPlaying, handlePlayPause, firstSlotAudioRef, secondSlotAudioRef } = useStreamPlayer();
+  const {
+    isPlaying,
+    handlePlayPause,
+    firstSlotAudioRef,
+    secondSlotAudioRef
+  } = useStreamPlayer();
 
   return (
     <div className="">
