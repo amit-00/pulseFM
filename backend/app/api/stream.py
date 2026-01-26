@@ -37,6 +37,7 @@ async def get_playing(request: Request) -> dict[str, str | int]:
         )
         
         return {
+            "request_id": now_playing.request_id,
             "signed_url": signed_url,
             "duration_elapsed_ms": station.get_duration_elapsed_ms(),
             "duration_ms": now_playing.duration_ms,
@@ -77,6 +78,7 @@ async def get_next(request: Request) -> dict[str, str | int]:
         )
         
         return {
+            "request_id": next_track.request_id,
             "signed_url": signed_url,
             "duration_ms": next_track.duration_ms,
             "stubbed": next_track.stubbed,
