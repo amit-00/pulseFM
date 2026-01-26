@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import deque
 from typing import Dict
 
 from google.cloud.firestore import AsyncClient, FieldFilter, Query
@@ -20,7 +21,7 @@ class Station:
         self.track_start_time = None
         self.duration_elapsed_ms = 0
 
-        self.queue = asyncio.Queue()
+        self.queue = deque()
         self.queue_lock = asyncio.Lock()
         self.tracks_in_queue = set[str]()
 
@@ -61,17 +62,29 @@ class Station:
     def get_duration_elapsed_ms(self) -> int:
         return self.duration_elapsed_ms
 
-    def get_queue_size(self) -> int:
-        return self.queue.qsize()
+    async def get_queue_size(self) -> int:
+        async with self.queue_lock:
+            return len(self.queue)
+
+    async def get_next_track(self) -> ReadyRequest | None:
+        async with self.queue_lock:
+            if len(self.queue) > 0:
+                return self.queue[0]
+            return None
 
     async def _playback_loop(self) -> None:
         logger.info("Playing tracks")
         while self._is_running:
-            track: ReadyRequest | None = await self.queue.get()
+            track: ReadyRequest | None = None
+            
+            async with self.queue_lock:
+                if len(self.queue) > 0:
+                    track = self.queue.popleft()
+                else:
+                    track = None
 
             if track is None:
-                logger.info("Queue is empty, waiting for next request")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
                 continue
 
             self.now_playing = track
@@ -103,7 +116,7 @@ class Station:
                     await self._add_ready_track(data)
 
             async with self.queue_lock:
-                queue_size = self.queue.qsize()
+                queue_size = len(self.queue)
                 needed = 0
                 if queue_size < MINIMUM_DEPTH:
                     needed = MINIMUM_DEPTH - queue_size
@@ -125,7 +138,7 @@ class Station:
         async with self.queue_lock:
             if request_id not in self.tracks_in_queue:
                 self.tracks_in_queue.add(request_id)
-                await self.queue.put(request)
+                self.queue.append(request)
 
         doc_ref = self.db.collection("requests").document(request_id)
         try:
@@ -161,4 +174,4 @@ class Station:
 
             async with self.queue_lock:
                 self.tracks_in_queue.add(request.request_id)
-                await self.queue.put(request)
+                self.queue.append(request)
