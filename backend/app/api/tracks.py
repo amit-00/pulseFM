@@ -6,11 +6,11 @@ from app.services.db import get_db
 from app.services.storage import get_storage_blob
 
 
-router = APIRouter(prefix="/tracks", tags=["songs"])
+router = APIRouter(prefix="/tracks", tags=["tracks"])
 
 
 @router.get("/{request_id}")
-async def get_song(
+async def get_track(
     request_id: str, 
     db: AsyncClient = Depends(get_db),
 ):
