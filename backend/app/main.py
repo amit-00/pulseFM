@@ -5,6 +5,7 @@ from fastapi import FastAPI, APIRouter
 
 from app.api.requests import router as requests_router
 from app.api.stream import router as stream_router
+from app.api.tracks import router as tracks_router
 from app.core.station import Station
 from app.services.db import get_db
 
@@ -39,6 +40,7 @@ api_router = APIRouter(prefix="/api")
 
 api_router.include_router(requests_router)
 api_router.include_router(stream_router)
+api_router.include_router(tracks_router)
 app.include_router(api_router)
 
 
