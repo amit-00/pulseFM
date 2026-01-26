@@ -56,7 +56,7 @@ async def get_playing(request: Request) -> dict[str, str | int]:
 @router.get("/next")
 async def get_next(request: Request) -> dict[str, str | int]:
     station = request.app.state.station
-    next_track: ReadyRequest | None = station.get_next_track()
+    next_track: ReadyRequest | None = await station.get_next_track()
     if not next_track:
         raise HTTPException(status_code=404, detail="No next track is available")
 
