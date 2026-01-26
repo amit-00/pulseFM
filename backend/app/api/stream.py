@@ -21,4 +21,5 @@ async def get_now_playing(request: Request) -> dict[str, str | int]:
         "request_id": now_playing.request_id,
         "duration_elapsed_ms": station.get_duration_elapsed_ms(),
         "duration_ms": now_playing.duration_ms,
+        "stubbed": now_playing.stubbed,
     }
