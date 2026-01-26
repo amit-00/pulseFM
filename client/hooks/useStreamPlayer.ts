@@ -1,0 +1,111 @@
+import { useState, useCallback, useEffect } from "react";
+import { useAudioSlots } from "./useAudioSlots";
+import { fetchPlayingTrack, fetchNextTrack } from "@/lib/stream";
+
+type Slot = "first" | "second";
+
+export function useStreamPlayer() {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [activeSlot, setActiveSlot] = useState<Slot>("first");
+
+  const {
+    firstSlotAudioRef,
+    secondSlotAudioRef,
+    getActiveAudioRef,
+    getInactiveAudioRef,
+    loadTrackToSlot,
+    setTrackTime,
+    getInactiveSlot,
+  } = useAudioSlots();
+
+  const calculateStartTime = useCallback((durationElapsedMs: number, requestDelta: number): number => {
+    return (durationElapsedMs + requestDelta) / 1000;
+  }, []);
+
+  const handleSlotEnd = useCallback(async () => {
+    if (!isPlaying) return;
+
+    try {
+      const newActiveSlot = getInactiveSlot(activeSlot);
+      const newActiveAudioRef = getActiveAudioRef(newActiveSlot);
+
+      // Start playing the newly active slot
+      if (newActiveAudioRef.current) {
+        await newActiveAudioRef.current.play();
+      }
+
+      setActiveSlot(newActiveSlot);
+
+      // Fetch and load next track for the newly inactive slot
+      const nextTrack = await fetchNextTrack();
+      const newInactiveSlot = getInactiveSlot(newActiveSlot);
+      loadTrackToSlot(newInactiveSlot, nextTrack.signed_url);
+    } catch (error) {
+      console.error("Error switching slots:", error);
+      setIsPlaying(false);
+    }
+  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot]);
+
+  const handlePlayPause = useCallback(async () => {
+    const audioRef = getActiveAudioRef(activeSlot);
+
+    if (isPlaying) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      const requestTimestamp = performance.now();
+      const playingTrack = await fetchPlayingTrack();
+      const responseTimestamp = performance.now();
+      const delta = responseTimestamp - requestTimestamp;
+
+      const startTimeSeconds = calculateStartTime(playingTrack.duration_elapsed_ms, delta);
+
+      if (audioRef.current) {
+        audioRef.current.src = playingTrack.signed_url;
+        audioRef.current.currentTime = startTimeSeconds;
+        await audioRef.current.play();
+      }
+
+      setIsPlaying(true);
+
+      // Preload next track
+      const nextTrack = await fetchNextTrack();
+      const inactiveSlot = getInactiveSlot(activeSlot);
+      loadTrackToSlot(inactiveSlot, nextTrack.signed_url);
+    } catch (error) {
+      console.error("Error loading track:", error);
+    }
+  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot, calculateStartTime]);
+
+  // Set up event listeners for track end
+  useEffect(() => {
+    const firstAudio = firstSlotAudioRef.current;
+    const secondAudio = secondSlotAudioRef.current;
+
+    if (firstAudio) {
+      firstAudio.addEventListener("ended", handleSlotEnd);
+    }
+    if (secondAudio) {
+      secondAudio.addEventListener("ended", handleSlotEnd);
+    }
+
+    return () => {
+      if (firstAudio) {
+        firstAudio.removeEventListener("ended", handleSlotEnd);
+      }
+      if (secondAudio) {
+        secondAudio.removeEventListener("ended", handleSlotEnd);
+      }
+    };
+  }, [handleSlotEnd]);
+
+  return {
+    isPlaying,
+    handlePlayPause,
+    firstSlotAudioRef,
+    secondSlotAudioRef,
+  };
+}
