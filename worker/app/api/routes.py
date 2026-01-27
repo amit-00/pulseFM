@@ -5,11 +5,10 @@ from fastapi import APIRouter, HTTPException, Response
 from google.cloud import firestore
 from google.cloud.storage import Bucket
 
-from app.models.schemas import GenerateRequest
-from app.config.settings import STUBS_FOLDER
+from app.models.schemas import GenerateRequest, RequestStatus
 from app.services.storage import init_bucket
 from app.services.firestore import fail_request
-from app.services.processing import download_encode_and_upload
+from app.services.processing import generate_encode_and_upload
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ router = APIRouter()
 
 @router.post("/generate")
 async def generate(payload: GenerateRequest):
-    """Generate audio file from request."""
+    """Generate audio file from request using ACE-Step model."""
     request_id = payload.request_id
     logger.info(f"Received generate request for request_id: {request_id}")
     
@@ -34,24 +33,33 @@ async def generate(payload: GenerateRequest):
         logger.warning(f"Request not found: {request_id}")
         raise HTTPException(status_code=404, detail="Request not found")
 
+    request_data = request.to_dict()
+    logger.debug(f"Request data: {request_data}")
+    
+    # Check if request is already in a failed state
+    if request_data.get("status") == RequestStatus.FAILED.value:
+        logger.warning(f"Request {request_id} is in failed state, cannot process")
+        raise HTTPException(
+            status_code=409,
+            detail="Request is in failed state and cannot be processed"
+        )
+
     logger.info(f"Updating request {request_id} status to 'generating'")
     await request_ref.set({
-        "status": "generating"
+        "status": RequestStatus.GENERATING.value
     }, merge=True)
 
     audio_url = None
 
     try:
-        request_data = request.to_dict()
-        logger.debug(f"Request data: {request_data}")
-        
-        # Download asset, encode to .m4a, and upload to GCS
+        # Generate music using ACE-Step, encode to .m4a, and upload to GCS
         # Uses temp files with automatic cleanup
-        source_object_name = f"{STUBS_FOLDER}/{request_data['energy']}.wav"
-        audio_url, duration_ms = await download_encode_and_upload(
+        audio_url, duration_ms = await generate_encode_and_upload(
             bucket,
-            source_object_name,
-            f"{request_id}.m4a"
+            genre=request_data.get("genre", "electronic"),
+            mood=request_data.get("mood", "calm"),
+            energy=request_data.get("energy", "mid"),
+            dest_object_name=f"{request_id}.m4a"
         )
             
     except Exception as e:
@@ -65,7 +73,7 @@ async def generate(payload: GenerateRequest):
     # Successful generation
     try:
         await request_ref.set({
-            "status": "ready",
+            "status": RequestStatus.READY.value,
             "audio_url": audio_url,
             "duration_ms": duration_ms
         }, merge=True)

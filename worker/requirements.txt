@@ -4,3 +4,19 @@ pydantic==2.7.0
 google-cloud-firestore
 google-cloud-storage
 pydub
+python-dotenv
+
+# ACE-Step dependencies
+torch>=2.0.0
+torchaudio>=2.0.0
+torchvision>=0.15.0
+transformers>=4.50.0
+diffusers>=0.32.0
+accelerate>=1.6.0
+soundfile>=0.13.0
+librosa>=0.11.0
+numpy<2.0.0
+huggingface-hub>=0.20.0
+
+# ACE-Step package (install from GitHub)
+acestep @ git+https://github.com/ace-step/ACE-Step.git
