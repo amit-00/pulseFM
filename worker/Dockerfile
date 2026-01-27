@@ -42,12 +42,11 @@ RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://
 # Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download ACE-Step model checkpoint during build for faster cold starts
-# This downloads the 3.5B model from HuggingFace Hub
-RUN pip install huggingface-hub && \
-    huggingface-cli download ACE-Step/ACE-Step-v1-3.5B \
-    --local-dir /app/checkpoints \
-    --local-dir-use-symlinks False
+# Install ACE-Step from GitHub
+RUN git clone https://github.com/ace-step/ACE-Step.git /tmp/ace-step && \
+    cd /tmp/ace-step && \
+    pip install --no-cache-dir -e . && \
+    rm -rf /tmp/ace-step/.git
 
 # Copy application code
 COPY app/ app/
