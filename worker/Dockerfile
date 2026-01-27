@@ -13,10 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY generate.py .
-
-# Copy encoder code
-COPY encoder.py .
+COPY app/ app/
 
 # Copy assets
 COPY assets/ assets/
