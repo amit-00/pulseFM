@@ -9,10 +9,7 @@ BUCKET_NAME = os.getenv("STORAGE_BUCKET")
 STUBS_FOLDER = "stubbed"
 
 # ACE-Step Model Configuration
-ACE_STEP_CHECKPOINT_PATH = os.getenv(
-    "ACE_STEP_CHECKPOINT_PATH",
-    "/app/checkpoints"  # Default path in Docker container
-)
+ACE_STEP_CHECKPOINT_DIR = os.getenv("ACE_STEP_CHECKPOINT_DIR", "/app/checkpoints/ACE-Step/ACE-Step-v1-3.5B")
 
 # Generation Configuration
 GENERATION_DURATION_SEC = int(os.getenv("GENERATION_DURATION_SEC", "90"))

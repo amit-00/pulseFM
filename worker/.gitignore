@@ -2,3 +2,5 @@ credentials/
 .cursor
 .env
 *.wav
+__pycache__
+ACE-Step/

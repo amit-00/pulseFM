@@ -2,13 +2,14 @@
 import logging
 import tempfile
 from pathlib import Path
+from acestep.pipeline_ace_step import ACEStepPipeline
 from typing import Optional
 
 import torch
 import soundfile as sf
 
 from app.config.settings import (
-    ACE_STEP_CHECKPOINT_PATH,
+    ACE_STEP_CHECKPOINT_DIR,
     GENERATION_DURATION_SEC,
     GENERATION_SEED,
 )
@@ -19,19 +20,21 @@ logger = logging.getLogger(__name__)
 _pipeline = None
 
 
+def initialize_pipeline() -> ACEStepPipeline:
+    return ACEStepPipeline(
+        checkpoint_dir=ACE_STEP_CHECKPOINT_DIR,
+        dtype="bfloat16",
+        torch_compile=True,
+    )
+
+
 def get_pipeline():
     """Get or initialize the ACE-Step pipeline (singleton pattern)."""
     global _pipeline
     
     if _pipeline is None:
-        logger.info("Loading ACE-Step model...")
-        from acestep import ACEStepPipeline
         
-        _pipeline = ACEStepPipeline.from_pretrained(
-            ACE_STEP_CHECKPOINT_PATH,
-            torch_dtype=torch.bfloat16,
-        )
-        _pipeline.to("cuda")
+        _pipeline = initialize_pipeline()
         logger.info("ACE-Step model loaded successfully")
     
     return _pipeline
@@ -142,15 +145,7 @@ def generate_song_request(
             logger.debug(f"Using seed: {generation_seed}")
         
         logger.info(f"Starting ACE-Step generation with {GENERATION_DURATION_SEC}s duration")
-        
-        # Generate audio
-        result = pipeline(**generation_params)
-        
-        # Extract audio data from result
-        # ACE-Step returns audio as numpy array with sample rate
-        audio_data = result["audio"]
-        sample_rate = result.get("sample_rate", 44100)
-        
+
         # Create temporary file for the generated audio
         temp_file = tempfile.NamedTemporaryFile(
             delete=False,
@@ -160,8 +155,8 @@ def generate_song_request(
         output_path = Path(temp_file.name)
         temp_file.close()
         
-        # Save audio to WAV file
-        sf.write(str(output_path), audio_data, sample_rate)
+        # Generate audio
+        pipeline(*generation_params, save_path=output_path)
         
         logger.info(f"Generated audio saved to: {output_path}")
         return output_path
@@ -186,3 +181,6 @@ def unload_model():
         
         logger.info("ACE-Step model unloaded")
 
+if __name__ == "__main__":
+    generate_song_request(genre="pop", mood="happy", energy="high")
+    

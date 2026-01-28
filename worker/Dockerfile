@@ -43,13 +43,14 @@ RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install ACE-Step from GitHub
-RUN git clone https://github.com/ace-step/ACE-Step.git /tmp/ace-step && \
-    cd /tmp/ace-step && \
-    pip install --no-cache-dir -e . && \
-    rm -rf /tmp/ace-step/.git
+RUN pip install --no-cache-dir git+https://github.com/ace-step/ACE-Step.git
 
 # Copy application code
 COPY app/ app/
+
+# Copy and run model download script
+COPY scripts/download_models.py scripts/
+RUN python3 scripts/download_models.py
 
 # Copy entrypoint script
 COPY entrypoint.sh .
