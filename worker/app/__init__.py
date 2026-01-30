@@ -1,2 +1,0 @@
-"""PulseFM Worker Application."""
-
