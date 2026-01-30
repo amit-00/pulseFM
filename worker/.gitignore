@@ -4,3 +4,4 @@ credentials/
 *.wav
 __pycache__
 ACE-Step/
+*-key.json
