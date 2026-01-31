@@ -10,9 +10,6 @@ services:
       - PORT=8080
       - PROJECT_ID=${PROJECT_ID}
       - LOCATION=${LOCATION}
-      - QUEUE_NAME=${QUEUE_NAME}
-      - GEN_WORKER_URL=${GEN_WORKER_URL}
-      - INVOKER_SA_EMAIL=${INVOKER_SA_EMAIL}
       - PYTHONUNBUFFERED=1
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
       - MODAL_TOKEN_ID=${MODAL_TOKEN_ID}
