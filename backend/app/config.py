@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     queue_name: str = Field(..., env="QUEUE_NAME")
     gen_worker_url: str = Field(..., env="GEN_WORKER_URL")
     invoker_sa_email: str = Field(..., env="INVOKER_SA_EMAIL")
+    
+    # Modal
+    modal_token_id: str = Field(..., env="MODAL_TOKEN_ID")
+    modal_token_secret: str = Field(..., env="MODAL_TOKEN_SECRET")
 
     class Config:
         env_file = ".env"
