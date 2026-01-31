@@ -1,4 +1,3 @@
-import os
 import modal
 from app.models.request import RequestGenre, RequestMood, RequestEnergy
 
