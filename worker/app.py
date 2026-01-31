@@ -1,4 +1,5 @@
 """Modal worker for PulseFM music generation."""
+import json
 import logging
 import modal
 import tempfile
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 CHECKPOINT_DIR = "/checkpoints/ACE-Step/ACE-Step-v1-3.5B"
 GENERATION_DURATION_SEC = 150
+GCS_BUCKET_NAME = "pulsefm-generated-songs"
 
 # BPM settings for each energy level - keeps tempo consistent
 ENERGY_BPM = {
@@ -20,6 +22,10 @@ ENERGY_BPM = {
 }
 
 app = modal.App("pulsefm-worker")
+
+# Reference GCS credentials stored in Modal secret
+# Create with: modal secret create gcs-credentials GCS_CREDENTIALS_JSON=@pulsefm-worker-key.json
+gcs_secret = modal.Secret.from_name("gcs-credentials")
 
 
 def download_models():
@@ -41,6 +47,7 @@ image = (
         "torch==2.8.0",
         "torchaudio==2.8.0",
         "huggingface-hub",
+        "google-cloud-storage",
         "git+https://github.com/ace-step/ACE-Step.git@6ae0852b1388de6dc0cca26b31a86d711f723cb3",
     )
     .run_function(download_models, gpu="L4")
@@ -59,14 +66,14 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
         "high": f"{bpm} BPM, upbeat tempo, driving rhythm"
     }
     
-    # Mood affects the emotional tone
+    # Mood affects the emotional tone - be specific about musical qualities
     mood_descriptions = {
-        "happy": "uplifting, bright, positive",
-        "sad": "melancholic, emotional, nostalgic",
-        "calm": "peaceful, serene, relaxed",
-        "exciting": "dynamic, engaging, energetic",
-        "romantic": "warm, intimate, tender",
-        "party": "fun, groovy, upbeat"
+        "happy": "uplifting, bright, positive, major key, cheerful melody",
+        "sad": "melancholic, somber, minor key, bittersweet, introspective, mournful undertones, emotional depth",
+        "calm": "peaceful, serene, relaxed, ambient, gentle, soft dynamics",
+        "exciting": "dynamic, energetic, building tension, powerful, intense",
+        "romantic": "warm, intimate, tender, dreamy, lush harmonies",
+        "party": "fun, groovy, danceable, infectious rhythm, high energy"
     }
     
     # Genre-specific instruments (limited to 2-3 for clarity)
@@ -105,6 +112,7 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
     image=image,
     gpu="L4",
     timeout=600,
+    secrets=[gcs_secret],
 )
 class MusicGenerator:
     """GPU class for music generation with proper container lifecycle management."""
@@ -113,6 +121,8 @@ class MusicGenerator:
     def load_model(self):
         """Load ACE-Step model once per container lifecycle."""
         from acestep.pipeline_ace_step import ACEStepPipeline
+        from google.cloud import storage
+        from google.oauth2 import service_account
         
         self.pipeline = ACEStepPipeline(
             checkpoint_dir=CHECKPOINT_DIR,
@@ -121,21 +131,33 @@ class MusicGenerator:
             overlapped_decode=True,
         )
         logger.info("ACE-Step model loaded successfully")
+        
+        # Initialize GCS client from credentials
+        credentials_json = os.environ.get("GCS_CREDENTIALS_JSON")
+        if not credentials_json:
+            raise ValueError(
+                "GCS_CREDENTIALS_JSON environment variable is not set. "
+                "Create the secret with: modal secret create gcs-credentials GCS_CREDENTIALS_JSON=@pulsefm-worker-key.json"
+            )
+        logger.info(f"GCS credentials length: {len(credentials_json)}, starts with: {credentials_json[:50] if len(credentials_json) > 50 else credentials_json}")
+        credentials_info = json.loads(credentials_json)
+        credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        self.gcs_client = storage.Client(credentials=credentials, project=credentials_info["project_id"])
+        self.bucket = self.gcs_client.bucket(GCS_BUCKET_NAME)
+        logger.info(f"GCS client initialized for bucket: {GCS_BUCKET_NAME}")
     
     @modal.method()
-    def generate(self, genre: str, mood: str, energy: str) -> bytes:
+    def generate(self, request_id: str, genre: str, mood: str, energy: str) -> None:
         """
-        Generate audio and return as bytes.
+        Generate audio and upload to GCS bucket.
         
         Args:
+            request_id: Unique request identifier (used as filename)
             genre: Music genre (pop, rock, hip_hop, jazz, classical, electronic, rnb)
             mood: Mood (happy, sad, calm, exciting, romantic, party)
             energy: Energy level (low, mid, high)
-        
-        Returns:
-            WAV audio data as bytes.
         """
-        logger.info(f"Generating song: genre={genre}, mood={mood}, energy={energy}")
+        logger.info(f"Generating song: request_id={request_id}, genre={genre}, mood={mood}, energy={energy}")
         
         generated_path = None
         
@@ -180,12 +202,15 @@ class MusicGenerator:
             self.pipeline(**generation_params, save_path=str(generated_path))
             logger.info(f"Generated audio: {generated_path}")
             
-            # Read and return audio bytes
-            with open(generated_path, "rb") as f:
-                audio_bytes = f.read()
+            # Upload to GCS
+            blob_name = f"raw/{request_id}.wav"
+            blob = self.bucket.blob(blob_name)
+            blob.upload_from_filename(str(generated_path), content_type="audio/wav")
             
-            logger.info(f"Returning {len(audio_bytes)} bytes of audio data")
-            return audio_bytes
+            # Verify upload succeeded
+            blob.reload()
+            gcs_uri = f"gs://{GCS_BUCKET_NAME}/{blob_name}"
+            logger.info(f"Uploaded audio to GCS: {gcs_uri} (size: {blob.size} bytes)")
             
         finally:
             # Cleanup temp file
@@ -195,24 +220,22 @@ class MusicGenerator:
 
 @app.local_entrypoint()
 def main(
+    request_id: str = "test",
     genre: str = "electronic",
     mood: str = "calm",
     energy: str = "mid",
-    output: str = "output.wav"
 ):
     """
     Local entrypoint for testing.
     
     Usage:
-        modal run app.py --genre electronic --mood calm --energy mid --output my_song.wav
+        modal run app.py --request-id my-song --genre electronic --mood calm --energy mid
+    
+    The generated audio will be uploaded to the GCS bucket.
     """
-    logger.info(f"Generating: genre={genre}, mood={mood}, energy={energy}")
+    logger.info(f"Generating: request_id={request_id}, genre={genre}, mood={mood}, energy={energy}")
     
     generator = MusicGenerator()
-    audio_bytes = generator.generate.remote(genre, mood, energy)
+    generator.generate.remote(request_id, genre, mood, energy)
     
-    # Save to local file
-    with open(output, "wb") as f:
-        f.write(audio_bytes)
-    
-    logger.info(f"Saved to {output} ({len(audio_bytes)} bytes)")
+    logger.info("Generation complete - audio uploaded to GCS")
