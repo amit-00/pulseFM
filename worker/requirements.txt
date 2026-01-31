@@ -1,3 +1,5 @@
 modal
 soundfile
 huggingface-hub
+fastapi
+pydantic

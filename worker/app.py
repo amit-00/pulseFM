@@ -1,17 +1,23 @@
 """Modal worker for PulseFM music generation."""
 import logging
 import modal
-import shutil
 import tempfile
+import os
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Configuration
-BUCKET_NAME = "pulsefm-generated-music"  # Replace with your actual bucket name
 CHECKPOINT_DIR = "/checkpoints/ACE-Step/ACE-Step-v1-3.5B"
-GENERATION_DURATION_SEC = 90
+GENERATION_DURATION_SEC = 150
+
+# BPM settings for each energy level - keeps tempo consistent
+ENERGY_BPM = {
+    "low": 70,    # Slow, dreamy lofi
+    "mid": 85,    # Classic study beats tempo
+    "high": 100,  # Upbeat but still lofi
+}
 
 app = modal.App("pulsefm-worker")
 
@@ -27,159 +33,159 @@ def download_models():
 
 
 # Build image with CUDA, ffmpeg, and ACE-Step
+# Using the same setup as Modal's official example
 image = (
-    modal.Image.from_registry(
-        "nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04",
-        add_python="3.11"
-    )
-    .apt_install("ffmpeg", "libsndfile1", "git")
+    modal.Image.debian_slim(python_version="3.12")
+    .apt_install("git", "ffmpeg")
     .pip_install(
-        "torch",
-        "torchaudio",
-        extra_index_url="https://download.pytorch.org/whl/cu121"
+        "torch==2.8.0",
+        "torchaudio==2.8.0",
+        "huggingface-hub",
+        "git+https://github.com/ace-step/ACE-Step.git@6ae0852b1388de6dc0cca26b31a86d711f723cb3",
     )
-    .pip_install("soundfile", "huggingface-hub")
-    .run_commands("pip install git+https://github.com/ace-step/ACE-Step.git")
     .run_function(download_models, gpu="L4")
 )
 
-# GCS bucket mount for output files
-gcs_bucket = modal.CloudBucketMount(
-    bucket_name=BUCKET_NAME,
-    secret=modal.Secret.from_name("gcs-credentials")
+
+def build_prompt(genre: str, mood: str, energy: str) -> str:
+    """Build a generation prompt from request parameters."""
+    # Get BPM for this energy level
+    bpm = ENERGY_BPM.get(energy, ENERGY_BPM["mid"])
+    
+    # Energy affects tempo and rhythm description
+    energy_descriptions = {
+        "low": f"{bpm} BPM, slow tempo, sparse arrangement",
+        "mid": f"{bpm} BPM, moderate tempo, steady groove",
+        "high": f"{bpm} BPM, upbeat tempo, driving rhythm"
+    }
+    
+    # Mood affects the emotional tone
+    mood_descriptions = {
+        "happy": "uplifting, bright, positive",
+        "sad": "melancholic, emotional, nostalgic",
+        "calm": "peaceful, serene, relaxed",
+        "exciting": "dynamic, engaging, energetic",
+        "romantic": "warm, intimate, tender",
+        "party": "fun, groovy, upbeat"
+    }
+    
+    # Genre-specific instruments (limited to 2-3 for clarity)
+    genre_instruments = {
+        "pop": "electric piano, acoustic guitar",
+        "rock": "clean electric guitar, organ",
+        "hip_hop": "rhodes piano, vinyl samples",
+        "jazz": "rhodes piano, upright bass",
+        "classical": "grand piano, strings",
+        "electronic": "analog synth, pad synth",
+        "rnb": "rhodes piano, electric bass"
+    }
+    
+    energy_desc = energy_descriptions.get(energy, energy_descriptions["mid"])
+    mood_desc = mood_descriptions.get(mood, mood_descriptions["calm"])
+    instruments = genre_instruments.get(genre, "rhodes piano, guitar")
+    
+    # Main lofi beat template with genre instruments plugged in
+    prompt = (
+        f"lofi hip hop instrumental, chillhop, {energy_desc}, "
+        f"{mood_desc} mood, "
+        f"featuring {instruments}, "
+        "lofi drums with punchy kick and crisp snare, "
+        "warm sub bass, "
+        "clean mix, clear instrument separation, "
+        "subtle tape warmth, vinyl texture, "
+        "dry sound, minimal reverb, "
+        "structured arrangement, "
+        "no vocals, instrumental only, consistent tempo"
+    )
+    
+    return prompt
+
+
+@app.cls(
+    image=image,
+    gpu="L4",
+    timeout=600,
 )
-
-
-@app.cls(image=image, gpu="L4", volumes={"/gcs": gcs_bucket}, timeout=600)
-class Generator:
-    """Music generation worker using ACE-Step model."""
+class MusicGenerator:
+    """GPU class for music generation with proper container lifecycle management."""
     
     @modal.enter()
     def load_model(self):
-        """Initialize ACE-Step pipeline once per container."""
+        """Load ACE-Step model once per container lifecycle."""
         from acestep.pipeline_ace_step import ACEStepPipeline
         
         self.pipeline = ACEStepPipeline(
             checkpoint_dir=CHECKPOINT_DIR,
             dtype="bfloat16",
-            torch_compile=True,
+            cpu_offload=False,
+            overlapped_decode=True,
         )
         logger.info("ACE-Step model loaded successfully")
     
-    def _build_prompt(self, genre: str, mood: str, energy: str) -> str:
-        """Build a generation prompt from request parameters."""
-        energy_descriptions = {
-            "low": "slow tempo, relaxed, minimal beats",
-            "mid": "moderate tempo, balanced rhythm, steady groove",
-            "high": "upbeat tempo, energetic, driving rhythm"
-        }
-        
-        mood_descriptions = {
-            "happy": "uplifting, bright, positive vibes",
-            "sad": "melancholic, emotional, nostalgic",
-            "calm": "peaceful, serene, meditative",
-            "exciting": "dynamic, thrilling, intense",
-            "romantic": "warm, intimate, tender",
-            "party": "fun, celebratory, lively"
-        }
-        
-        genre_styles = {
-            "pop": "catchy melodies, polished sound",
-            "rock": "guitar-driven, raw energy",
-            "hip_hop": "boom bap beats, urban vibes",
-            "jazz": "sophisticated harmonies, smooth progressions",
-            "classical": "orchestral elements, elegant composition",
-            "electronic": "synth textures, digital soundscapes",
-            "rnb": "soulful grooves, smooth melodies"
-        }
-        
-        energy_desc = energy_descriptions.get(energy, energy_descriptions["mid"])
-        mood_desc = mood_descriptions.get(mood, mood_descriptions["calm"])
-        genre_style = genre_styles.get(genre, "warm analog feel, vinyl crackle")
-        
-        prompt = (
-            f"lofi hip hop instrumental, {genre_style}, "
-            f"{mood_desc}, {energy_desc}, "
-            "lo-fi beats, chillhop, study music, "
-            "warm analog synths, soft drums, atmospheric pads, "
-            "no vocals, instrumental only"
-        )
-        
-        return prompt
-    
-    def _generate_audio(self, genre: str, mood: str, energy: str) -> Path:
-        """Generate audio using ACE-Step model."""
-        prompt = self._build_prompt(genre, mood, energy)
-        
-        generation_params = {
-            "prompt": prompt,
-            "duration": GENERATION_DURATION_SEC,
-            "instrumental": True,
-            "num_inference_steps": 100,
-            "guidance_scale": 7.5,
-            "tag_guidance_scale": 3.0,
-            "min_guidance_scale": 2.0,
-            "guidance_interval": 0.5,
-            "guidance_interval_decay": 0.0,
-            "lyric_guidance_scale": 0.0,
-        }
-        
-        # Create temporary file for the generated audio
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".wav",
-            prefix="generated_"
-        )
-        output_path = Path(temp_file.name)
-        temp_file.close()
-        
-        # Generate audio
-        self.pipeline(**generation_params, save_path=output_path)
-        
-        return output_path
-    
     @modal.method()
-    def generate(
-        self,
-        request_id: str,
-        genre: str,
-        mood: str,
-        energy: str
-    ) -> dict:
+    def generate(self, genre: str, mood: str, energy: str) -> bytes:
         """
-        Generate a song and upload to GCS.
+        Generate audio and return as bytes.
         
         Args:
-            request_id: Unique identifier for the request
             genre: Music genre (pop, rock, hip_hop, jazz, classical, electronic, rnb)
-            mood: Mood of the track (happy, sad, calm, exciting, romantic, party)
+            mood: Mood (happy, sad, calm, exciting, romantic, party)
             energy: Energy level (low, mid, high)
         
         Returns:
-            dict with audio_url
+            WAV audio data as bytes.
         """
-        import os
-        
-        logger.info(f"Generating song: request_id={request_id}, genre={genre}, mood={mood}, energy={energy}")
+        logger.info(f"Generating song: genre={genre}, mood={mood}, energy={energy}")
         
         generated_path = None
         
         try:
-            # Step 1: Generate audio
+            # Build prompt (BPM is embedded in the prompt text)
+            prompt = build_prompt(genre, mood, energy)
+            
+            generation_params = {
+                "audio_duration": GENERATION_DURATION_SEC,
+                "prompt": prompt,
+                "lyrics": "[inst]",  # instrumental marker
+                "format": "wav",
+                # Inference settings - more steps for better quality
+                "infer_step": 80,
+                # Higher guidance scale for stronger prompt adherence (including BPM in text)
+                "guidance_scale": 18,
+                "scheduler_type": "euler",
+                "cfg_type": "apg",
+                # Higher omega scale for better prompt following
+                "omega_scale": 12,
+                # Guidance throughout the generation for consistency
+                "guidance_interval": 0.7,
+                "guidance_interval_decay": 0.1,
+                "min_guidance_scale": 5,
+                # ERG settings for better control
+                "use_erg_tag": True,
+                "use_erg_lyric": True,
+                "use_erg_diffusion": True,
+            }
+            
+            # Create temporary file for the generated audio
+            temp_file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".wav",
+                prefix="generated_"
+            )
+            generated_path = Path(temp_file.name)
+            temp_file.close()
+            
+            # Generate audio
             logger.info("Starting audio generation...")
-            generated_path = self._generate_audio(genre, mood, energy)
-            logger.debug(f"Generated audio: {generated_path}")
+            self.pipeline(**generation_params, save_path=str(generated_path))
+            logger.info(f"Generated audio: {generated_path}")
             
-            # Step 2: Write raw wav to GCS via CloudBucketMount
-            gcs_output_path = Path(f"/gcs/raw/{request_id}.wav")
-            gcs_output_path.parent.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Writing to GCS: {gcs_output_path}")
-            shutil.copy(generated_path, gcs_output_path)
+            # Read and return audio bytes
+            with open(generated_path, "rb") as f:
+                audio_bytes = f.read()
             
-            audio_url = f"gs://{BUCKET_NAME}/raw/{request_id}.wav"
-            logger.info(f"Successfully uploaded: {audio_url}")
-            
-            return {"audio_url": audio_url}
+            logger.info(f"Returning {len(audio_bytes)} bytes of audio data")
+            return audio_bytes
             
         finally:
             # Cleanup temp file
@@ -189,18 +195,24 @@ class Generator:
 
 @app.local_entrypoint()
 def main(
-    request_id: str,
     genre: str = "electronic",
     mood: str = "calm",
-    energy: str = "mid"
+    energy: str = "mid",
+    output: str = "output.wav"
 ):
-    """Local entrypoint for testing."""
-    generator = Generator()
-    result = generator.generate.remote(
-        request_id=request_id,
-        genre=genre,
-        mood=mood,
-        energy=energy
-    )
-    logger.info(f"Result: {result}")
-
+    """
+    Local entrypoint for testing.
+    
+    Usage:
+        modal run app.py --genre electronic --mood calm --energy mid --output my_song.wav
+    """
+    logger.info(f"Generating: genre={genre}, mood={mood}, energy={energy}")
+    
+    generator = MusicGenerator()
+    audio_bytes = generator.generate.remote(genre, mood, energy)
+    
+    # Save to local file
+    with open(output, "wb") as f:
+        f.write(audio_bytes)
+    
+    logger.info(f"Saved to {output} ({len(audio_bytes)} bytes)")
