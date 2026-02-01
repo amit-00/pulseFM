@@ -6,7 +6,7 @@ import { PlayerControls } from "./PlayerControls";
 import { cn } from "@/lib/utils";
 
 // Test audio URL - public domain music
-const TEST_AUDIO_URL = "https://ff3213bfd0a636af35a36442f16029ad976cf16a70c6e6c881a0bb3-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrhGToS_TmPHHA3kgalv3-jtdoOeuoRNqYFWjh0vYcW9Sh25SELPw-D5qcoKABBux4evnnVKwsyZYLHkf96-LJHo_4SbFajuKbeOMyTRypNvZ0PtDTKLEVJASPSB15HKpL3LqKkQqH4mhFZEmAgpiEL-MQiepsn0k-hNiNOtT0RT0-DGEsKfOvGmKTaeU8WkblmEIPzgu4avGwqVPeIyg3dXLbH3ECeH5emtl7GWKfUW4kTc_nET5L5X1iClZRPPB46s3boy3-meYeGKukMCtFGUMp-f8lx1cBw3lX2y5BArk9YUiZ2uTmEEeisnisRz287FwNg6Uq2a_AbvlhzOdzlbGDR6n3WlgpgfHnAeXpjyuXxlUkg-o3lxUfL6PoYOwvyVqdg32cNga3vifJ8aVUQ4kDjDag_fcImAEO2Qzg1aTUb5dS4PgSe55-srhc2JQwhYoo3El_f9z0V2lV6CQMdL0zr7N-cBSxtrMijnfXeB_jB4UOAxUU-hjjv182U-G3-uPbNP_4i2u-lYOlrypiOV01k9xX3Wv2XgEOklPCR07pYhayT-AjAsypkryEhSrn7Oa6Nz7XIkwKvmnnmARpDk7d6WPJjpSolfDAdeudtuJyssC6jy00k0Ny838IsudiEovXZ4gAFf6UxTgjrRI7t_mBHvRAV0NbDYc5iCJRo00xkUOpS3hDToilmWQD2KMMgF1Ln1caW9l5tZla0skaXL6evpODtHzFm1-n2YnSgOql5z0MT7sjRwzd0BTcgyXZSfY-npgTgAnl6Fk-Ml0QktzBhhBddlXwKHekqeGeqHhmTN6KU0CvDeZekbGhXiWNLb3hswwtNlZhLWt4XqB8d9sJqyuPStpVoRq3BTuns8gXYGvGWR73O9MHQoeO3O5fBjIbpMsmiQMmFFxHkTz_CgBwRBeueL4Xfnt8Y3PK7pTvOzb5BWE7JlUlqbPJTcuruNDzvNxe6pWTr8OsRf6pR-V67Maei7_m9HkWOE90cxQbpjJOu-IYdAU2VZGOI9zHIb9K7SBllv0E3d8qf_OlNa6R0InQiPev4AuyN1NOTUZJ6xxXn6oh0uPlqKohU3g7sMi9wGdhZWEW9lgtdAHqnjLk3-S-uz8ZMFQqKvp-y03yzxp9Liv3A6AtD6Tpy4jjnJ4CQ7a9nvbwUebzess-HvgVfpJFv3orLKKwFZeIj48JzxmYh5pPnsRUo59Lm8_qywWzFk&isca=1";
+const TEST_AUDIO_URL = "https://ff258a6047be6eb9ff3fc3e87f6939d6078f1b1df9aab909058c8f8-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrh6YtyrNhmrGrlledPJeBr-1wd8s-kVIDO37rc0tSiX7j7NnxJ2FisikFRZkJZsHTnlRdm6RDy822vj8bYE3MkNQhGnxZuHwfaeX4IGlBDPMtZjdyprqnx296EjEtGzDiaWYOzuheJ536y4mFO8A4p25J_PrAX1v8Om0XncGfCMFWj-YSsXr3QsShs1jcwv3SrPmKg4SDfFiDc-OUa10W6w5B4MnfH2h_b9zAf7f7ypEX8SzsOWDopAINiaN30M8kteuHe1u3DkTbobOUjkNPiYJwAYfl1xhHQIdchSkjZLe-n34W1vzqP7EwJqVoCWTjP6ML7-NCzS-IB26xXtHRM4Tu7prke25qQQ6UvAFXbFMpgxnGBsKyYoY6ZEU3ZyFQ_NjyIS8vBDUu0Pge5c89uk9LDnTc8_cpbP0rC_N7gwsG2BjVLlmuK2thwy84-W9ajLfn7sI9aAkiaFbFDJRKTj3gDYlzGLbOEZcegKVI89IQRbD07g9MadAe1WsmoUsdLtb1_zpZJfoQk_7-ClLL-bkjoxPTuq7wndOAJYKcAndIIxlnpdNBYiFenjTWNVNMDN9cqm5dY0Vz76WYlkK3v2RH7r0usdf5MEoCcpbu805NXyrcBQcl2HTnRUclYqKKOxtsQY6DSssqtklLRozGCpSZJPOsDnVqR3P5HWANnGZfllYXw94p_6hmAPZOw4Y83AgNRN7ehnHPUI_5EnwpAU0bGxg9ZXjW35tq-6robYhDze4uiHqD9FedQnZ3HysfHpa6ODcYop_dvL5Yk0uIJTY3Gjd4hWZzTpMOQO8X6TrkD5qVbNj1Mo_GWh0Thtx4bUrnlU6hDmHsjVwVrvnVz9Ho206zR-KesHSAVtPo3rKqG5HXoiRY6Nwh-gbM_4Q8axn0NViRHTfrF3DwvXBDsKRsM_d47ZBxyHMoPX52KaB3DTLu8c4am5pyjoIFz_9yEJg7L9n9ePgRuXb-8ENSPRb31CmibPRWSJT7eZx2yTuBieHqUC5Jpbm5Vcn8BkneYcBa3LOep14t0-YjuaJZbNAE-hpiZ-KV0IjXi_P-TIvXz7yfcW4nVfpxppWwFn0SwLhn6A2ouGX9cmKAHwf9SWv-EvmWCg8j-iKnDAfm-WYa5n02IvUbMsrjx55E1ghXhcYQbGS8R_rJEEbOxz2JEkHt0bEXmz_XyLK5qDJ8o1LMhFhiCey5TWhc-u45AnCXL-0-_95Q&isca=1";
 
 interface SynthesizerPlayerProps {
   className?: string;
@@ -128,8 +128,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
   return (
     <div
       className={cn(
-        "grid grid-rows-[1fr_auto] min-h-screen h-screen w-full",
-        "bg-slate-950",
+        "grid grid-rows-[1fr_auto] h-full w-full",
         className
       )}
     >
@@ -143,7 +142,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
       />
 
       {/* Dot Matrix Visualizer - fills remaining space */}
-      <div className="w-full h-full min-h-0 p-4 sm:p-6 md:p-8">
+      <div className="w-full h-full min-h-0 px-4 pt-4 pb-4 sm:px-6 sm:pt-6 sm:pb-6 md:px-8 md:pt-8 md:pb-6">
         <DotMatrixVisualizer
           frequencyData={frequencyData}
           isActive={isAnalysing}
@@ -151,8 +150,8 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
       </div>
 
       {/* Player Controls - fixed height at bottom */}
-      <div className="w-full px-4 pb-6 sm:px-6 sm:pb-8 md:px-8 md:pb-10">
-        <div className="w-full p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800/30">
+      <div className="w-full px-4 pb-4 sm:px-6 sm:pb-6 md:px-8 md:pb-8">
+        <div className="w-full p-4 sm:p-5 rounded-2xl bg-slate-900/50 border border-slate-800/30">
           <PlayerControls
             isPlaying={isPlaying}
             onPlayPause={handlePlayPause}

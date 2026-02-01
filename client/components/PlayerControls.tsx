@@ -33,7 +33,7 @@ export function PlayerControls({
       >
         {/* Aurora gradient background */}
         <span
-          className="absolute inset-0 animate-aurora bg-[length:200%_auto]"
+          className="absolute inset-0 animate-aurora bg-size-[200%_auto]"
           style={{
             backgroundImage: "linear-gradient(135deg, #FF0080, #7928CA, #0070F3, #38bdf8, #FF0080)",
             animationDuration: "4s",
@@ -41,7 +41,7 @@ export function PlayerControls({
         />
         {/* Overlay for depth */}
         <span className="absolute inset-0 bg-black/10" />
-        
+
         {isPlaying ? (
           // Pause icon
           <svg
