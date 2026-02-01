@@ -164,9 +164,14 @@ export function DotMatrixVisualizer({
 
   // Start/stop animation loop
   useEffect(() => {
+    // Initial render
     render();
 
+    // Delayed render to catch late layout calculations
+    const timeoutId = setTimeout(render, 100);
+
     return () => {
+      clearTimeout(timeoutId);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
@@ -194,7 +199,7 @@ export function DotMatrixVisualizer({
     <div
       ref={containerRef}
       className={cn(
-        "relative w-full h-full overflow-hidden",
+        "relative w-full h-full min-h-[200px] overflow-hidden",
         className
       )}
     >
