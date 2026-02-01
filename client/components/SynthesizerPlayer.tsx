@@ -189,7 +189,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
         >
           <span className="text-lg md:text-2xl lg:text-3xl xl:text-4xl font-bold tracking-tight text-stone-100">
             Pulse{" "}
-            <AuroraText className="italic">
+            <AuroraText className="italic" active={isPlaying}>
               FM
             </AuroraText>
           </span>
