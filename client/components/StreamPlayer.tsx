@@ -20,23 +20,23 @@ export function StreamPlayer() {
           className={cn(
             "relative flex items-center justify-center",
             "w-20 h-20 rounded-full",
-            "bg-slate-800 border-2 border-slate-700",
-            "hover:bg-slate-700 hover:border-slate-600",
+            "bg-stone-800 border-2 border-stone-700",
+            "hover:bg-stone-700 hover:border-stone-600",
             "transition-all duration-200",
-            "focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-950",
+            "focus:outline-none focus:ring-2 focus:ring-stone-500 focus:ring-offset-2 focus:ring-offset-stone-950",
             "active:scale-95"
           )}
           aria-label={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? (
-            <Pause className="w-8 h-8 text-slate-50" fill="currentColor" />
+            <Pause className="w-8 h-8 text-stone-50" fill="currentColor" />
           ) : (
-            <Play className="w-8 h-8 text-slate-50 ml-1" fill="currentColor" />
+            <Play className="w-8 h-8 text-stone-50 ml-1" fill="currentColor" />
           )}
         </button>
 
         <div className="text-center">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-stone-400">
             {isPlaying ? "Now Playing" : "Ready to Play"}
           </p>
         </div>

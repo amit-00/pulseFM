@@ -24,7 +24,7 @@ export function PlayerControls({
           "relative flex items-center justify-center",
           "w-14 h-14 rounded-full",
           "transition-all duration-200",
-          "focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:ring-offset-2 focus:ring-offset-slate-950",
+          "focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:ring-offset-2 focus:ring-offset-stone-950",
           "active:scale-95",
           "shadow-lg shadow-purple-500/20",
           "overflow-hidden"
@@ -66,10 +66,10 @@ export function PlayerControls({
 
       {/* Song Label */}
       <div className="flex flex-col">
-        <span className="text-slate-500 text-xs uppercase tracking-wider font-medium">
+        <span className="text-stone-500 text-xs uppercase tracking-wider font-medium">
           {isPlaying ? "Now Playing" : "Ready"}
         </span>
-        <span className="text-slate-100 text-lg font-semibold tracking-tight">
+        <span className="text-stone-100 text-lg font-semibold tracking-tight">
           {label}
         </span>
       </div>
