@@ -2,12 +2,16 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { DotMatrixVisualizer } from "./DotMatrixVisualizer";
+import { WaveformVisualizer } from "./WaveformVisualizer";
 import { PlayerControls } from "./PlayerControls";
 import { RequestForm } from "./RequestForm";
+import { AuroraText } from "./ui/aurora-text";
 import { cn } from "@/lib/utils";
 
+type VisualizerType = "waveform" | "dotmatrix";
+
 // Test audio URL - public domain music
-const TEST_AUDIO_URL = "https://ff13b79853fba51a1afc6264bde53f65a70611ff7e5b026bc3a8837-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrjEMSNxHj4BzgSXyCrjgUOAisw1oeDWyhA3yICWyWKuegrtLfB32yIc9vi7peWARm3UC1PGSHW_r8LBzVVz_dzDfQ4BLboBZT-shJP0B8d22xphU93s41eHiK4PYfXoasE3K_tTk5vwPKmKqwN7GXmiprq_hkhz2gRn9xM81rm_0VidYXtzxxQv2T9rQWKq3pWzlLxnSTUwvlmw8nfcKMuBcFceoYo4NuoAmqWcvcuqpF_fdjq5L3yokSjHspoj3BfVXu0Ma_E_Kvkvu2oCbaH2ZFon0hzk--iQIivOSXUE00NPrORtDHUHZDlcc3n-rQzsBvH8QcjpsHtkHIbSt5l4py2h7XltmkyrmR1aY2LX99_TUVEMoX0FlS_ymJSO1JnYxaAekSL2zV1HeP9EwCS3zSUWG3zRK3bZOaHCHbsR5Al6YJ6IoBOeHOIdTp37qoWEndqdadQFfPPmEDBkBU4JlXZUEHmdsUe-n0FpFl-JURnPp0_HV-Z8FQs3edqIzxsTP2LR1-8lCmV4aYEWL1o79mEG9MpYJMsTTrMbe2skLFfHEkckYw13y5rUrrLnfoi_wd1tVNdXym0f08xmP8R_6UuSNAd7krSwEImaBLzKBBil_AOiAZhlcc5sYfDTVgJRUZXh-JM3sp4AVhaia3Hqxo2BZ1mAImpDou3E8EKl5flZ0Mp_cGyaUTsU8VXmKdBn0fBbn4soffzfPC00vsaCbUIaLpA1axR1U13AoWHC2fFUZISP0t7MP3L10Vd9P2yR3bbRLeoKFNEoJrWrGBtoroYy-DPJD_6UyIoRtpkxOgOxxe5JgXx61A8N23bb9VqtB_PLYIYQ9cK0AiJ9unFs2d7LjEqpM8S7523zZ_iMLIkfwdXB_4EdiQXvtdbLe_d-d4E37q-cppS5hjd5PqMVn8aoN1k_Q406H7QmyjX0nlmcu8wIy3scNIgt0kS8cYhu-c4yjG4nRIooDzNoIWaPSQNzlXcDaDcnyPFG1WDO61R42J9YiWhEjH0qSSyon3XXMsP5hDwVdbyPifqzbtvH02s-3SST9xjD5h0j9iV-zN_-YrukUuIbmx-RXW9KXouKLCgtxlpNfX7UkrArfk3TLnAvilDW6K4Eyvn-wcy0cULY8nNjvBjt7LQTx5arBawKOr0HbmugwRrQpnmVPqjF_uFL3zddXN-0mGPRZV-ofugBSFHIk1PmpfPR0HUmQQiAvokEEA&isca=1";
+const TEST_AUDIO_URL = "https://ff71a6b60f9812d70599f984a19b55ed33c8967da3a7afe2f03c7ef-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrgM-lCUjG7xmautAeP7HC5tY3NpBQ1T0jtBW8uvlwzLKTX-fPi5eXL3_UsCArazlWRuZ5YrSYB7B0tplou9g8ipGkjdW0PvH_NtQwL3HwPsA8rF4-leR5CYfVInADfRgCutM5sRrRUXGktmj3So-kkKm_B0ZIgJoEjKjoakQ85sV9wCacm1TnVJ4P0fM4pXxXNc_mNVur9mWERzUHwrFEnwDU_THFD6xOIMchupwLPY5dST-JI_ync3m0Qf_bexOc_gaICBaZq1fdGlkVEIdQnGXSGdHL-Y-Hufn8VpMwOYAEU67dmBVji_HnYNQ6hustuG4WgT6ZbiW-VUlBQpv-dOExCNJHMU1NibLXBtu46W95LjxPe1LrhHhysk1Obwsoa5ARn15rQ3LoJg3uAtT0K0LZoc2n7bhn5CCWRfuJjMbO7e1EQ_bVmTrDeZs1XdH7O61zTzeXO0_GPxGkdlPX0BNOGBAoSEVj24P-LSAB_GuHaZmrio_cOduOcN78TrtET-vdukBtM2oU3Pf59i1yEEu67IsPe5c56NhYbREBiphs4WJnYYHry4ao_RkMQjcZd5eyJc8iST6zBjIv5wcE2WkwGkMay-RiTPv-PBarlIAivBiSDdyhbeTbg5VQDiHPC649942ov5ZGCW3uk0eytCf1XKokjXx3beMynYFPJ5bczTBumUaA0sRpfunxMF4F1cXrtRzNNB_iVS011RdmQK7i3tkpuPvCP7J8fDXgCzfGPI95EqiCyw00D14rgSu1FwTMjAM26hKGTiILNLohY3YcDGXYUbXTJzATjSr7a08Fh9j-WH5kt8DRPDKCHmXGlZyUG37rjw80Uu_DiHnIfBreD2q2GomRs_ZKxMh4rhAkTi2HR2hrjhfUtAQWIGBPugV5XjxpPQK5uqZO1v17jKrJOt6J1hHm_4XuS-4BEykEK-xtCumBf6ndS8bAz5vqoZ7pssbTZXLNGQkCNPdL3F67J4vA5WMWFzA1cUyUgyD7a9RYeQbB8BMEHmei1480vq9JkSDQmcvpjUN-soUCq4vR7Fwfy0afxl7NfeGpHxHd3LDt3c7s2MecHvE0bthz399Vaclw9eG7rElf7TvtAP-DUU7OefMJbjbUPAzusrkAEXTiI1eFaLE3RzhYUISc-1TBnDd4tyx-WTTw2q8aEKvf0JPdBaKEXMjqY6_CNgB-oIm1di80iLFWSt-ptN4tT_9bFTlQ&isca=1";
 
 interface SynthesizerPlayerProps {
   className?: string;
@@ -23,6 +27,8 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [frequencyData, setFrequencyData] = useState<Uint8Array>(new Uint8Array(32));
   const [isAnalysing, setIsAnalysing] = useState(false);
+  const [volume, setVolume] = useState(1); // Volume range: 0 to 1
+  const [visualizer, setVisualizer] = useState<VisualizerType>("waveform"); // Default to waveform
 
   // Initialize audio context and analyser
   const initializeAudio = useCallback(() => {
@@ -100,6 +106,21 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
     }
   }, [isPlaying, initializeAudio, startAnalysing, stopAnalysing]);
 
+  // Handle volume change
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    setVolume(newVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume;
+    }
+  }, []);
+
+  // Sync volume with audio element
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
   // Handle audio ended
   useEffect(() => {
     const audio = audioRef.current;
@@ -129,7 +150,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
   return (
     <div
       className={cn(
-        "relative min-h-[400px] h-full w-full",
+        "relative h-full w-full",
         className
       )}
     >
@@ -142,12 +163,113 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
         style={{ display: "none" }}
       />
 
-      {/* Dot Matrix Visualizer - fills entire container */}
+      {/* Visualizer - fills entire container */}
       <div className="absolute inset-0">
-        <DotMatrixVisualizer
-          frequencyData={frequencyData}
-          isActive={isAnalysing}
-        />
+        {visualizer === "waveform" ? (
+          <WaveformVisualizer
+            frequencyData={frequencyData}
+            isActive={isAnalysing}
+          />
+        ) : (
+          <DotMatrixVisualizer
+            frequencyData={frequencyData}
+            isActive={isAnalysing}
+          />
+        )}
+      </div>
+
+      {/* Pulse FM Widget - top left */}
+      <div className="absolute top-4 left-4 sm:top-6 sm:left-6 md:top-8 md:left-8 pointer-events-none">
+        <div
+          className={cn(
+            "px-4 py-2 md:px-6 md:py-3 lg:px-8 lg:py-4",
+            "rounded-lg md:rounded-xl lg:rounded-2xl",
+            "bg-stone-950/50 backdrop-blur-sm border border-stone-800/30"
+          )}
+        >
+          <span className="text-lg md:text-2xl lg:text-3xl xl:text-4xl font-bold tracking-tight text-stone-100">
+            Pulse{" "}
+            <AuroraText className="italic">
+              FM
+            </AuroraText>
+          </span>
+        </div>
+      </div>
+
+      {/* Top right widgets - Visualizer Toggle + Live Indicator */}
+      <div className="absolute top-4 right-4 sm:top-6 sm:right-6 md:top-8 md:right-8 flex items-center gap-2 md:gap-3">
+        {/* Visualizer Toggle Button */}
+        <button
+          onClick={() => setVisualizer(visualizer === "waveform" ? "dotmatrix" : "waveform")}
+          className={cn(
+            "flex items-center gap-2",
+            "px-3 py-2 md:px-4 md:py-2.5",
+            "rounded-lg md:rounded-xl",
+            "bg-stone-950/50 backdrop-blur-sm border border-stone-700/30",
+            "text-stone-400 hover:text-stone-200 hover:border-stone-600/50",
+            "transition-all duration-200"
+          )}
+        >
+          {visualizer === "waveform" ? (
+            <>
+              {/* Grid/Matrix icon */}
+              <svg className="w-4 h-4 md:w-5 md:h-5" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="6" cy="6" r="2" />
+                <circle cx="12" cy="6" r="2" />
+                <circle cx="18" cy="6" r="2" />
+                <circle cx="6" cy="12" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="18" cy="12" r="2" />
+                <circle cx="6" cy="18" r="2" />
+                <circle cx="12" cy="18" r="2" />
+                <circle cx="18" cy="18" r="2" />
+              </svg>
+              <span className="text-xs md:text-sm font-medium">Matrix</span>
+            </>
+          ) : (
+            <>
+              {/* Waveform icon */}
+              <svg className="w-4 h-4 md:w-5 md:h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M2 12h2l2-6 3 12 3-8 2 4 2-2h6" />
+              </svg>
+              <span className="text-xs md:text-sm font-medium">Wave</span>
+            </>
+          )}
+        </button>
+
+        {/* Live Indicator */}
+        <div
+          className={cn(
+            "flex items-center gap-2 md:gap-3",
+            "px-3 py-2 md:px-4 md:py-2.5 lg:px-5 lg:py-3",
+            "rounded-lg md:rounded-xl",
+            "bg-stone-950/50 backdrop-blur-sm border",
+            "transition-all duration-300 pointer-events-none",
+            isPlaying
+              ? "border-red-500/30 shadow-lg shadow-red-500/10"
+              : "border-stone-700/30 opacity-50"
+          )}
+        >
+          <span className="relative flex h-2.5 w-2.5 md:h-3 md:w-3 lg:h-3.5 lg:w-3.5">
+            {isPlaying && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            )}
+            <span
+              className={cn(
+                "relative inline-flex rounded-full h-2.5 w-2.5 md:h-3 md:w-3 lg:h-3.5 lg:w-3.5 transition-colors duration-300",
+                isPlaying ? "bg-red-500" : "bg-stone-500"
+              )}
+            />
+          </span>
+          <span
+            className={cn(
+              "text-xs md:text-sm lg:text-base font-semibold uppercase tracking-wider transition-colors duration-300",
+              isPlaying ? "text-red-400" : "text-stone-500"
+            )}
+          >
+            Live
+          </span>
+        </div>
       </div>
 
       {/* Overlay - unified controls panel */}
@@ -160,6 +282,8 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
                 isPlaying={isPlaying}
                 onPlayPause={handlePlayPause}
                 label="pulseFM Radio"
+                volume={volume}
+                onVolumeChange={handleVolumeChange}
               />
             </div>
 
