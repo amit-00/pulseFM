@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAudioSlots } from "./useAudioSlots";
+import { useAudioAnalyser } from "./useAudioAnalyser";
 import { fetchPlayingTrack, fetchNextTrack } from "@/lib/stream";
 
 type Slot = "first" | "second";
@@ -7,6 +8,7 @@ type Slot = "first" | "second";
 export function useStreamPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSlot, setActiveSlot] = useState<Slot>("first");
+  const audioElementsConnected = useRef(false);
 
   const {
     firstSlotAudioRef,
@@ -18,9 +20,31 @@ export function useStreamPlayer() {
     getInactiveSlot,
   } = useAudioSlots();
 
+  const {
+    frequencyData,
+    isAnalysing,
+    connectAudioElement,
+    startAnalysing,
+    stopAnalysing,
+    initializeAudioContext,
+  } = useAudioAnalyser();
+
   const calculateStartTime = useCallback((durationElapsedMs: number, requestDelta: number): number => {
     return (durationElapsedMs + requestDelta) / 1000;
   }, []);
+
+  // Connect audio elements to analyser when they're available
+  const connectAudioElements = useCallback(() => {
+    if (audioElementsConnected.current) return;
+    
+    if (firstSlotAudioRef.current) {
+      connectAudioElement(firstSlotAudioRef.current);
+    }
+    if (secondSlotAudioRef.current) {
+      connectAudioElement(secondSlotAudioRef.current);
+    }
+    audioElementsConnected.current = true;
+  }, [firstSlotAudioRef, secondSlotAudioRef, connectAudioElement]);
 
   const handleSlotEnd = useCallback(async () => {
     if (!isPlaying) return;
@@ -43,8 +67,9 @@ export function useStreamPlayer() {
     } catch (error) {
       console.error("Error switching slots:", error);
       setIsPlaying(false);
+      stopAnalysing();
     }
-  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot]);
+  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot, stopAnalysing]);
 
   const handlePlayPause = useCallback(async () => {
     const audioRef = getActiveAudioRef(activeSlot);
@@ -52,10 +77,15 @@ export function useStreamPlayer() {
     if (isPlaying) {
       audioRef.current?.pause();
       setIsPlaying(false);
+      stopAnalysing();
       return;
     }
 
     try {
+      // Initialize audio context on user interaction (required by browsers)
+      initializeAudioContext();
+      connectAudioElements();
+
       const requestTimestamp = performance.now();
       const playingTrack = await fetchPlayingTrack();
       const responseTimestamp = performance.now();
@@ -70,6 +100,7 @@ export function useStreamPlayer() {
       }
 
       setIsPlaying(true);
+      startAnalysing();
 
       // Preload next track
       const nextTrack = await fetchNextTrack();
@@ -77,8 +108,20 @@ export function useStreamPlayer() {
       loadTrackToSlot(inactiveSlot, nextTrack.signed_url);
     } catch (error) {
       console.error("Error loading track:", error);
+      stopAnalysing();
     }
-  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot, calculateStartTime]);
+  }, [
+    activeSlot,
+    isPlaying,
+    getActiveAudioRef,
+    getInactiveSlot,
+    loadTrackToSlot,
+    calculateStartTime,
+    initializeAudioContext,
+    connectAudioElements,
+    startAnalysing,
+    stopAnalysing,
+  ]);
 
   // Set up event listeners for track end
   useEffect(() => {
@@ -107,5 +150,7 @@ export function useStreamPlayer() {
     handlePlayPause,
     firstSlotAudioRef,
     secondSlotAudioRef,
+    frequencyData,
+    isAnalysing,
   };
 }
