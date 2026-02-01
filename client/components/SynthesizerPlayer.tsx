@@ -152,7 +152,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
 
       {/* Player Controls - fixed height at bottom */}
       <div className="w-full px-4 pb-6 sm:px-6 sm:pb-8 md:px-8 md:pb-10">
-        <div className="w-full p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800/50 backdrop-blur-sm">
+        <div className="w-full p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800/30">
           <PlayerControls
             isPlaying={isPlaying}
             onPlayPause={handlePlayPause}
