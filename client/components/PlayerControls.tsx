@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useState, useRef, useEffect } from "react";
+import { RainbowButton } from "@/components/ui/rainbow-button";
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -58,52 +59,85 @@ export function PlayerControls({
 
   return (
     <div className={cn("flex items-center gap-4", className)}>
-      {/* Play/Pause Button with Aurora effect */}
-      <button
-        onClick={onPlayPause}
-        className={cn(
-          "relative flex items-center justify-center",
-          "w-14 h-14 rounded-full",
-          "transition-all duration-200",
-          "focus:outline-none focus:ring-2 focus:ring-purple-400/50 focus:ring-offset-2 focus:ring-offset-stone-950",
-          "active:scale-95",
-          "shadow-lg shadow-purple-500/20",
-          "overflow-hidden"
-        )}
-        aria-label={isPlaying ? "Pause" : "Play"}
-      >
-        {/* Aurora gradient background */}
-        <span
-          className="absolute inset-0 animate-aurora bg-size-[200%_auto]"
-          style={{
-            backgroundImage: "linear-gradient(135deg, #FF0080, #7928CA, #0070F3, #38bdf8, #FF0080)",
-            animationDuration: "4s",
-          }}
-        />
-        {/* Overlay for depth */}
-        <span className="absolute inset-0 bg-black/10" />
+      {/* Play/Pause Button with Rainbow outline effect when playing */}
+      <div className="relative w-14 h-14">
+        {/* Base button - always visible, behind rainbow effect */}
+        <button
+          onClick={onPlayPause}
+          className={cn(
+            "absolute inset-0 flex items-center justify-center",
+            "w-14 h-14 rounded-full",
+            "transition-all duration-200",
+            "focus:outline-none",
+            "active:scale-95",
+            "bg-stone-800/50",
+            "z-0"
+          )}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            // Pause icon
+            <svg
+              className="w-7 h-7 text-white drop-shadow-sm"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <rect x="5" y="4" width="5" height="16" rx="2" />
+              <rect x="14" y="4" width="5" height="16" rx="2" />
+            </svg>
+          ) : (
+            // Play icon
+            <svg
+              className="w-7 h-7 text-white drop-shadow-sm"
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M6 4.5v15a1.5 1.5 0 002.3 1.26l11.5-7.5a1.5 1.5 0 000-2.52l-11.5-7.5A1.5 1.5 0 006 4.5z" />
+            </svg>
+          )}
+        </button>
 
-        {isPlaying ? (
-          // Pause icon
-          <svg
-            className="relative z-10 w-7 h-7 text-white drop-shadow-sm"
-            fill="currentColor"
-            viewBox="0 0 24 24"
+        {/* Rainbow button overlay - fades in/out when playing */}
+        <div
+          className={cn(
+            "absolute inset-0 transition-opacity duration-700 ease-in-out z-10",
+            isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+        >
+          <RainbowButton
+            variant="outline"
+            size="icon"
+            onClick={onPlayPause}
+            className={cn(
+              "w-14 h-14 rounded-full",
+              "flex items-center justify-center",
+              "p-0"
+            )}
+            aria-label={isPlaying ? "Pause" : "Play"}
           >
-            <rect x="5" y="4" width="5" height="16" rx="2" />
-            <rect x="14" y="4" width="5" height="16" rx="2" />
-          </svg>
-        ) : (
-          // Play icon
-          <svg
-            className="relative z-10 w-7 h-7 text-white drop-shadow-sm"
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path d="M6 4.5v15a1.5 1.5 0 002.3 1.26l11.5-7.5a1.5 1.5 0 000-2.52l-11.5-7.5A1.5 1.5 0 006 4.5z" />
-          </svg>
-        )}
-      </button>
+            {isPlaying ? (
+              // Pause icon
+              <svg
+                className="w-7 h-7 text-white drop-shadow-sm"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <rect x="5" y="4" width="5" height="16" rx="2" />
+                <rect x="14" y="4" width="5" height="16" rx="2" />
+              </svg>
+            ) : (
+              // Play icon
+              <svg
+                className="w-7 h-7 text-white drop-shadow-sm"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M6 4.5v15a1.5 1.5 0 002.3 1.26l11.5-7.5a1.5 1.5 0 000-2.52l-11.5-7.5A1.5 1.5 0 006 4.5z" />
+              </svg>
+            )}
+          </RainbowButton>
+        </div>
+      </div>
 
       {/* Song Label */}
       <div className="flex flex-col">

@@ -34,7 +34,11 @@ const energyLevels: { value: Energy; label: string }[] = [
   { value: "high", label: "High" },
 ]
 
-export function RequestForm() {
+interface RequestFormProps {
+  isPlaying?: boolean
+}
+
+export function RequestForm({ isPlaying = false }: RequestFormProps) {
   const [genre, setGenre] = useState<Genre | "">("")
   const [mood, setMood] = useState<Mood | "">("")
   const [energy, setEnergy] = useState<Energy>("mid")
@@ -158,13 +162,46 @@ export function RequestForm() {
           </select>
         </div>
 
-        <RainbowButton
-          type="submit"
-          disabled={isSubmitting}
-          variant="outline"
-        >
-          {isSubmitting ? "..." : "Request"}
-        </RainbowButton>
+        {/* Request Button with Rainbow outline effect when playing */}
+        <div className="relative">
+          {/* Base button - always visible, behind rainbow effect */}
+          <button
+            type="submit"
+            disabled={!isPlaying || isSubmitting}
+            className={cn(
+              "relative flex items-center justify-center",
+              "px-4 py-2 rounded-sm",
+              "transition-all duration-200",
+              "focus:outline-none",
+              "active:scale-95",
+              "bg-stone-800/50",
+              "text-sm font-medium whitespace-nowrap",
+              "transition-colors duration-700",
+              isPlaying ? "text-white" : "text-stone-100",
+              "disabled:pointer-events-none disabled:opacity-50",
+              "z-0"
+            )}
+          >
+            {isSubmitting ? "..." : "Request"}
+          </button>
+
+          {/* Rainbow button overlay - fades in/out when playing */}
+          <div
+            className={cn(
+              "absolute inset-0 transition-opacity duration-700 ease-in-out z-10",
+              isPlaying && !isSubmitting ? "opacity-100" : "opacity-0 pointer-events-none"
+            )}
+          >
+            <RainbowButton
+              type="submit"
+              disabled={isSubmitting}
+              variant="outline"
+              className="w-full"
+            >
+              {isSubmitting ? "..." : "Request"}
+            </RainbowButton>
+          </div>
+        </div>
       </form>
 
       {message && (
