@@ -184,7 +184,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
           className={cn(
             "px-4 py-2 md:px-6 md:py-3 lg:px-8 lg:py-4",
             "rounded-lg md:rounded-xl lg:rounded-2xl",
-            "bg-stone-950/50 backdrop-blur-sm border border-stone-800/30"
+            "bg-stone-900/60 backdrop-blur-sm border border-stone-800/30"
           )}
         >
           <span className="text-lg md:text-2xl lg:text-3xl xl:text-4xl font-bold tracking-tight text-stone-100">
@@ -205,7 +205,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
             "flex items-center gap-2",
             "px-3 py-2 md:px-4 md:py-2.5",
             "rounded-lg md:rounded-xl",
-            "bg-stone-950/50 backdrop-blur-sm border border-stone-700/30",
+            "bg-stone-900/60 backdrop-blur-sm border border-stone-700/30",
             "text-stone-400 hover:text-stone-200 hover:border-stone-600/50",
             "transition-all duration-200"
           )}
@@ -243,7 +243,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
             "flex items-center gap-2 md:gap-3",
             "px-3 py-2 md:px-4 md:py-2.5 lg:px-5 lg:py-3",
             "rounded-lg md:rounded-xl",
-            "bg-stone-950/50 backdrop-blur-sm border",
+            "bg-stone-900/60 backdrop-blur-sm border",
             "transition-all duration-300 pointer-events-none",
             isPlaying
               ? "border-red-500/30 shadow-lg shadow-red-500/10"
@@ -274,7 +274,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
 
       {/* Overlay - unified controls panel */}
       <div className="absolute inset-x-0 bottom-0 px-4 pb-4 sm:px-6 sm:pb-6 md:px-8 md:pb-8 pointer-events-none">
-        <div className="w-full p-4 sm:p-5 rounded-2xl bg-stone-950/50 backdrop-blur-sm border border-stone-800/20 pointer-events-auto">
+        <div className="w-full p-4 sm:p-5 rounded-2xl bg-stone-900/60 backdrop-blur-sm border border-stone-800/20 pointer-events-auto">
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 md:items-center">
             {/* Player Controls */}
             <div className="flex-1">
