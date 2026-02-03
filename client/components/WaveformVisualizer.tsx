@@ -13,7 +13,7 @@ interface WaveformVisualizerProps {
 // Inactive beam component (static grey line)
 function InactiveBeamLine() {
   return (
-    <div 
+    <div
       className="absolute left-0 top-1/2 -translate-y-1/2 h-[2px] w-[calc(50%-5px)]"
       style={{
         background: "linear-gradient(to right, transparent 0%, rgba(120, 120, 120, 0.3) 20%, rgba(120, 120, 120, 0.5) 100%)"
@@ -86,14 +86,22 @@ export function WaveformVisualizer({
     []
   );
 
-  // Calculate average frequency value
+  // Calculate average frequency value from bottom 75% of frequencies
   const getAverageFrequency = useCallback((data: Uint8Array): number => {
     if (data.length === 0) return 0;
+
+    // Use only the bottom 75% of frequency bins (lowest frequencies)
+    const endIndex = Math.floor(data.length * 0.75);
     let sum = 0;
-    for (let i = 0; i < data.length; i++) {
+    let count = 0;
+
+    for (let i = 0; i < endIndex; i++) {
       sum += data[i];
+      count++;
     }
-    return sum / data.length / 255; // Normalized 0-1
+
+    if (count === 0) return 0;
+    return sum / count / 255; // Normalized 0-1
   }, []);
 
   // Main render function
@@ -166,7 +174,7 @@ export function WaveformVisualizer({
         centerX,
         centerY + centerBarHeight / 2
       );
-      
+
       if (active) {
         centerBarGradient.addColorStop(0, "rgba(239, 68, 68, 0.7)"); // red-500
         centerBarGradient.addColorStop(0.5, "rgba(220, 38, 38, 1)"); // red-600
@@ -187,7 +195,7 @@ export function WaveformVisualizer({
       const centerBarX = centerX - CENTER_BAR_WIDTH / 2;
       const centerBarY = centerY - centerBarHeight / 2;
       const radius = CENTER_BAR_WIDTH / 2;
-      
+
       ctx.beginPath();
       ctx.roundRect(centerBarX, centerBarY, CENTER_BAR_WIDTH, centerBarHeight, radius);
       ctx.fill();
@@ -231,7 +239,7 @@ export function WaveformVisualizer({
       });
 
       // === DRAW DECORATIVE ELEMENTS ===
-      
+
       // Subtle horizontal baseline on right side
       ctx.strokeStyle = "rgba(56, 189, 248, 0.1)";
       ctx.lineWidth = 1;
@@ -282,19 +290,19 @@ export function WaveformVisualizer({
     >
       {/* Canvas for flowing bars */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-      
+
       {/* Beam source point (off-screen left) */}
       <div
         ref={beamFromRef}
         className="absolute -left-4 top-1/2 -translate-y-1/2 w-2 h-2"
       />
-      
+
       {/* Beam target point (center bar) */}
       <div
         ref={beamToRef}
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2"
       />
-      
+
       {/* Show animated beam only when active, otherwise show static grey line */}
       {isActive ? (
         <AnimatedBeam
