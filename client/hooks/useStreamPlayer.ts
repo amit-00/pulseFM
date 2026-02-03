@@ -36,7 +36,7 @@ export function useStreamPlayer() {
   // Connect audio elements to analyser when they're available
   const connectAudioElements = useCallback(() => {
     if (audioElementsConnected.current) return;
-    
+
     if (firstSlotAudioRef.current) {
       connectAudioElement(firstSlotAudioRef.current);
     }

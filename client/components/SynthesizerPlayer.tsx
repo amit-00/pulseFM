@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 type VisualizerType = "waveform" | "dotmatrix";
 
 // Test audio URL - public domain music
-const TEST_AUDIO_URL = "https://ff737b904534f861a307e21e393a68128338b82a52ff9378279f705-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrgOrBRO7Nc0rXf3DpSX5Mj2uQRYK8-bdLe1UDPFkZmgxX-K9Oplw6XdK36f2cm9XzPcDT5I48a_Z2DZsruqHeHw1a6gvGpQm05oVMqMVgPPQcDT4AqNeiY-G6ImFgROFU3sXZPveCBn7aukW35DWfPZ003h36potbNxQPYMHfGECstJOEZjDD1LVDH4kOnbvFXXaYPos4Qt9pXREVUQPBPuAZWXgvd1VS33W_cLHwDwhJS9baFNPU9YFKQ_m3rtDvhaDBu-_nS4liXkqM3TYQjP0dbWJ8FjA1by_5iVl9SxX9XSSOruSRckQOat8xvbyb4fsGwUZPJHcZrxnvPp8JbfM8M-s7Np0RtHgI9TAaqLlyhaPOZkPMLXy_RqDPi0pbQraa3vszCwHBkyV38vuhtJFACrG-cxoSN11enlPJhRYqnS19ad8s7I1UxEShrrxS38S7hlmzIpeYm6qAPDU_xv_CMaFfutzpqjyJ9i14HwD3JNvSi16k4ZYKn9leZ9eIRfRS6jjx4aG4V32S3pYz8H3ys0lMpgC-NP0vGyCxDtlyUvBR4LRbQ3z4OkQ79n_VHfJdeayMGP18Rc2TI0zt8KbFQQRUOEDQ5KzWsly7N4MXFC72eebeYEwtezHUBflbGuwbKoaUxDyTKWeSs0PM8CfWSbvfi0afcZQEf8SuU7PtlaH2FBYoPccA-x1dPxU4Ge1CbEQFS5RV3sJ3X-ZhQnDcJnNvnYk5ewsRF7R28Vufudossm9hwPeRWl4h2L40FVLjLzxY9VxXQJbXt23WeUrefuueKuOj_tcWA3SWI_f1GlPYlRaIU-KfP9c_cdeSoM50pMMqU3yPFJlb74p0_sjTXlOijtDk873YYn5mn0wJm2hMTxzsrQWhaCSyczwqsm7c6SzIH7Mq3HwD-tAfplGzspmQ30cmFuhVZcmxniLU5IVhVE2UBi3_hheK9Ho2kc3Zdh7H4Pu6C7SQ1OWWmX1ocjuF2NwhJIWmJ707W1D-kLBwP6S_jJSw7d8FkSyYL_r_LE-uyJjh3JK1kFvC4FkD-oLfE3YqzNNO94KWtMn8Na-hO1tHjaHH0vWwO0yeYelKYDRSzWtonLCy6_bDnYTbKJikRAuQ32OCuAs9bjlZwQLc39LAcfOkq5RtUR3lKFdIkFw78kE2iH-lgnFddWg-y648mWNQoT7JZtTuMrmT5_u8c5pKnXtIxBg2N0dgS1VCC40w&isca=1";
+const TEST_AUDIO_URL = "https://ff5f14986e6aaf3b1c14267a6a77993e57f59f979d68f8b3e6442c9-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrgsC51KWXjXTiYqisKyI3g_L9u4mWnxE3xqnYJ0kGSKCJL_SYdpvURvEOCKTYmFw17cF1zxpiiLft2P8SrtTz_okEnGbzYtDYvPjUGLK2-nZKktuALFDH7vdSPc6mxN5JR2IxGMSwhnT2h3pflbgW-0XTOlvTKOWFFKjHqgxn9sus9hfsj_hC0L9uDxhREVGx59n89faYCqcKrTMiGG4qeDCMR4Xvf5Gq0wB0ZG2Cz6r5j0i39eoDpC2tpNZQJ4f8moulGTUroTIEBrAXRJcGm6Hb4KMCL_YUEkspXH5Wq2k_SXhX0vo9TbViCLiLEOjBBxzqtPuCe7KHa4OT8KBYkXq8mSqofzdVJQvh3qUL0efkSYRhVi84jFI-9FBLz_OpCe9LTWGMbWM_R-3BWvjEHA7-DqBpG5dLq5kMrq-Yu1icDevhO3fXOoeIXLqKq0D-_yrKFJ6QCoKoGHeUm6QGYols9IQuT4TO85It_GkkMQYrKj0xJNcOKayQ0Sd7dQihIiHiz7Su1tao4ur0jE6z6lZoIyKadZAslRtFzDNGt5or9nDcsY8bLeFHlTGZDfHrUDUBr7hk88L6oSiUZpNXWwSjSNW2RhWx5M6ixhUtGh34_80dn8T08DZQIURAsSlMPLNN3M5jLN5za7rw04Q6dJkfcLMa-s5fQied3OcpS_vYyPbit2pm6QDJaff1HZM7tKZJvZL6ELW3wUJDrGBaPDEjECiKPCPBaieyydJI0w0n54BlvcEPFcMvzSEJy2xfISiDQpB-WONsMFc4yvjXc2VtHGiMIsHFXj1xqJVfUSSwSmO4syD-CZdG47BLgW60NV9-Z7Ex8UEA46S66JYsAfPjhQLP8OkCSnb57I8dUiXjUQ6tP_cUp-uwVVN_BO1KhlYxjdSIjs3xTXnU7zph3suP6u82O-J8TTMUiRssWjpzsZXlVMB-wNY2XB8KqbEBtpUpEaL0jmZoifMFXPnIJux95jiRvwENf3pAH77gJVrpvoNQCc_p-w8L8JkTa6PlkJJJuA7_8IZDVndncml1CWEW2p9jVy0NWchtlFS7WU2WJ-bh39mDzb61cKNyQ0mYbtGITG1yG1i_S9C4ifqEMZSk6RUjRAg65ayXIP2LFbfQEDBawo0_aeOtPKc-BHXbcqPlXOTfzaQArF8FfSWyRml4ZNM5xDDqNzF9ndF1EhiMiaWqX143S9ApDrjXegg0hd03kG&isca=1https://ff737b904534f861a307e21e393a68128338b82a52ff9378279f705-apidata.googleusercontent.com/download/storage/v1/b/pulsefm-generated-songs/o/raw%2Ftest.wav?jk=AUzyfrgOrBRO7Nc0rXf3DpSX5Mj2uQRYK8-bdLe1UDPFkZmgxX-K9Oplw6XdK36f2cm9XzPcDT5I48a_Z2DZsruqHeHw1a6gvGpQm05oVMqMVgPPQcDT4AqNeiY-G6ImFgROFU3sXZPveCBn7aukW35DWfPZ003h36potbNxQPYMHfGECstJOEZjDD1LVDH4kOnbvFXXaYPos4Qt9pXREVUQPBPuAZWXgvd1VS33W_cLHwDwhJS9baFNPU9YFKQ_m3rtDvhaDBu-_nS4liXkqM3TYQjP0dbWJ8FjA1by_5iVl9SxX9XSSOruSRckQOat8xvbyb4fsGwUZPJHcZrxnvPp8JbfM8M-s7Np0RtHgI9TAaqLlyhaPOZkPMLXy_RqDPi0pbQraa3vszCwHBkyV38vuhtJFACrG-cxoSN11enlPJhRYqnS19ad8s7I1UxEShrrxS38S7hlmzIpeYm6qAPDU_xv_CMaFfutzpqjyJ9i14HwD3JNvSi16k4ZYKn9leZ9eIRfRS6jjx4aG4V32S3pYz8H3ys0lMpgC-NP0vGyCxDtlyUvBR4LRbQ3z4OkQ79n_VHfJdeayMGP18Rc2TI0zt8KbFQQRUOEDQ5KzWsly7N4MXFC72eebeYEwtezHUBflbGuwbKoaUxDyTKWeSs0PM8CfWSbvfi0afcZQEf8SuU7PtlaH2FBYoPccA-x1dPxU4Ge1CbEQFS5RV3sJ3X-ZhQnDcJnNvnYk5ewsRF7R28Vufudossm9hwPeRWl4h2L40FVLjLzxY9VxXQJbXt23WeUrefuueKuOj_tcWA3SWI_f1GlPYlRaIU-KfP9c_cdeSoM50pMMqU3yPFJlb74p0_sjTXlOijtDk873YYn5mn0wJm2hMTxzsrQWhaCSyczwqsm7c6SzIH7Mq3HwD-tAfplGzspmQ30cmFuhVZcmxniLU5IVhVE2UBi3_hheK9Ho2kc3Zdh7H4Pu6C7SQ1OWWmX1ocjuF2NwhJIWmJ707W1D-kLBwP6S_jJSw7d8FkSyYL_r_LE-uyJjh3JK1kFvC4FkD-oLfE3YqzNNO94KWtMn8Na-hO1tHjaHH0vWwO0yeYelKYDRSzWtonLCy6_bDnYTbKJikRAuQ32OCuAs9bjlZwQLc39LAcfOkq5RtUR3lKFdIkFw78kE2iH-lgnFddWg-y648mWNQoT7JZtTuMrmT5_u8c5pKnXtIxBg2N0dgS1VCC40w&isca=1";
 
 interface SynthesizerPlayerProps {
   className?: string;
@@ -184,7 +184,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
           className={cn(
             "px-4 py-2 md:px-6 md:py-3 lg:px-8 lg:py-4",
             "rounded-lg md:rounded-xl lg:rounded-2xl",
-            "bg-stone-900/60 backdrop-blur-sm border border-stone-800/30"
+            "bg-stone-950/50 backdrop-blur-sm border border-stone-800/30"
           )}
         >
           <span className="text-lg md:text-2xl lg:text-3xl xl:text-4xl font-bold tracking-tight text-stone-100">
@@ -205,7 +205,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
             "flex items-center gap-2",
             "px-3 py-2 md:px-4 md:py-2.5",
             "rounded-lg md:rounded-xl",
-            "bg-stone-900/60 backdrop-blur-sm border border-stone-700/30",
+            "bg-stone-950/50 backdrop-blur-sm border border-stone-700/30",
             "text-stone-400 hover:text-stone-200 hover:border-stone-600/50",
             "transition-all duration-200"
           )}
@@ -243,7 +243,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
             "flex items-center gap-2 md:gap-3",
             "px-3 py-2 md:px-4 md:py-2.5 lg:px-5 lg:py-3",
             "rounded-lg md:rounded-xl",
-            "bg-stone-900/60 backdrop-blur-sm border",
+            "bg-stone-950/50 backdrop-blur-sm border",
             "transition-all duration-300 pointer-events-none",
             isPlaying
               ? "border-red-500/30 shadow-lg shadow-red-500/10"
@@ -274,7 +274,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
 
       {/* Overlay - unified controls panel */}
       <div className="absolute inset-x-0 bottom-0 px-4 pb-4 sm:px-6 sm:pb-6 md:px-8 md:pb-8 pointer-events-none">
-        <div className="w-full p-4 sm:p-5 rounded-2xl bg-stone-900/60 backdrop-blur-sm border border-stone-800/20 pointer-events-auto">
+        <div className="w-full p-4 sm:p-5 rounded-2xl bg-stone-950/50 backdrop-blur-sm border border-stone-800/20 pointer-events-auto">
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 md:items-center">
             {/* Player Controls */}
             <div className="flex-1">
