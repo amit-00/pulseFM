@@ -1,0 +1,17 @@
+[tool.uv.workspace]
+members = ["services/*", "packages/*"]
+
+[tool.uv.sources]
+pulsefm-models = { workspace = true }
+pulsefm-gcs = { workspace = true }
+pulsefm-backend = { workspace = true }
+pulsefm-encoder = { workspace = true }
+pulsefm-worker = { workspace = true }
+pulsefm-auth = { workspace = true }
+pulsefm-redis = { workspace = true }
+pulsefm-firestore = { workspace = true }
+pulsefm-pubsub = { workspace = true }
+pulsefm-vote-api = { workspace = true }
+pulsefm-tally-service = { workspace = true }
+pulsefm-vote-orchestrator = { workspace = true }
+pulsefm-descriptors = { workspace = true }

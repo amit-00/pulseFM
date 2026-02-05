@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-gcs"
+version = "0.1.0"
+description = "GCS helpers for PulseFM services."
+requires-python = ">=3.11"
+dependencies = [
+  "google-cloud-storage",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pulsefm_gcs*"]

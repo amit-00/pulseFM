@@ -1,0 +1,24 @@
+services:
+  vote-orchestrator:
+    build:
+      context: ../..
+      dockerfile: services/vote-orchestrator/Dockerfile
+    container_name: pulsefm-vote-orchestrator
+    ports:
+      - "8092:8080"
+    environment:
+      - PORT=8080
+      - PROJECT_ID=${PROJECT_ID}
+      - REDIS_URL=${REDIS_URL}
+      - VOTE_STATE_COLLECTION=voteState
+      - VOTE_WINDOWS_COLLECTION=voteWindows
+      - WINDOW_SECONDS=300
+      - VOTE_OPTIONS=${VOTE_OPTIONS}
+      - WINDOW_CHANGED_TOPIC=window-changed
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

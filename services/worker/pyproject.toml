@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-worker"
+version = "0.1.0"
+description = "PulseFM Modal worker for music generation."
+requires-python = ">=3.11"
+dependencies = [
+  "modal",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pulsefm_worker*"]

@@ -1,0 +1,26 @@
+services:
+  vote-api:
+    build:
+      context: ../..
+      dockerfile: services/vote-api/Dockerfile
+    container_name: pulsefm-vote-api
+    ports:
+      - "8090:8080"
+    environment:
+      - PORT=8080
+      - PROJECT_ID=${PROJECT_ID}
+      - SESSION_JWT_SECRET=${SESSION_JWT_SECRET}
+      - SESSION_TTL_SECONDS=604800
+      - REDIS_URL=${REDIS_URL}
+      - VOTE_EVENTS_TOPIC=vote-events
+      - VOTE_STATE_COLLECTION=voteState
+      - VOTE_WINDOWS_COLLECTION=voteWindows
+      - RL_SESSION_PER_MIN=10
+      - RL_IP_PER_MIN=60
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

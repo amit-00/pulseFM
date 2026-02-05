@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-firestore"
+version = "0.1.0"
+description = "Firestore client helpers for PulseFM."
+requires-python = ">=3.11"
+dependencies = [
+  "google-cloud-firestore",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pulsefm_firestore*"]
