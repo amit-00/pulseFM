@@ -8,7 +8,6 @@ FastAPI service that receives Cloud Tasks and updates Firestore vote tallies ide
 
 ## Required env vars
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
-- `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
 - `VOTES_COLLECTION` (default: `votes`)
 
 ## Run locally

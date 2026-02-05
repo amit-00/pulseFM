@@ -96,7 +96,6 @@ async def _open_next_window(db: AsyncClient, version: int) -> Dict[str, Any]:
     window_options = _get_window_options()
 
     window_doc = _build_window(window_id, start_at, end_at, window_options, version)
-    await db.collection(VOTE_WINDOWS_COLLECTION).document(window_id).set(window_doc)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
 
     return window_doc

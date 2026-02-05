@@ -39,7 +39,6 @@ async def tally_vote(request: Request) -> Dict[str, str]:
     db = get_firestore_client()
     votes_ref = db.collection(settings.votes_collection)
     vote_state_ref = db.collection(settings.vote_state_collection).document("current")
-    vote_window_ref = db.collection(settings.vote_windows_collection).document(window_id)
 
     state_snapshot = await vote_state_ref.get()
     if not state_snapshot.exists:
@@ -76,7 +75,6 @@ async def tally_vote(request: Request) -> Dict[str, str]:
 
         tally_field = f"tallies.{option}"
         transaction.update(vote_state_ref, {tally_field: Increment(1)})
-        transaction.update(vote_window_ref, {tally_field: Increment(1)})
         return True
 
     transaction = db.transaction()

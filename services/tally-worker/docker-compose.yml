@@ -9,7 +9,6 @@ services:
     environment:
       - PORT=8080
       - VOTE_STATE_COLLECTION=voteState
-      - VOTE_WINDOWS_COLLECTION=voteWindows
       - VOTES_COLLECTION=votes
     restart: unless-stopped
     healthcheck:
