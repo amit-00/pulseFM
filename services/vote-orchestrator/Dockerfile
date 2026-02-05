@@ -11,16 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY packages/pulsefm-redis packages/pulsefm-redis
 COPY packages/pulsefm-firestore packages/pulsefm-firestore
-COPY packages/pulsefm-pubsub packages/pulsefm-pubsub
 COPY packages/pulsefm-descriptors packages/pulsefm-descriptors
 COPY services/vote-orchestrator services/vote-orchestrator
 
 RUN pip install --no-cache-dir \
-    ./packages/pulsefm-redis \
     ./packages/pulsefm-firestore \
-    ./packages/pulsefm-pubsub \
     ./packages/pulsefm-descriptors \
     ./services/vote-orchestrator
 
