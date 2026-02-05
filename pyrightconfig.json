@@ -1,0 +1,14 @@
+{
+  "extraPaths": [
+    "packages/pulsefm-descriptors",
+    "packages/pulsefm-firestore",
+    "packages/pulsefm-pubsub",
+    "packages/pulsefm-redis",
+    "packages/pulsefm-models",
+    "packages/pulsefm-gcs",
+    "packages/pulsefm-auth",
+    "packages/pulsefm-tasks"
+  ],
+  "venvPath": ".",
+  "venv": ".venv"
+}

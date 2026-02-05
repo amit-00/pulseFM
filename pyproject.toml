@@ -12,6 +12,7 @@ pulsefm-redis = { workspace = true }
 pulsefm-firestore = { workspace = true }
 pulsefm-pubsub = { workspace = true }
 pulsefm-vote-api = { workspace = true }
-pulsefm-tally-service = { workspace = true }
 pulsefm-vote-orchestrator = { workspace = true }
 pulsefm-descriptors = { workspace = true }
+pulsefm-tasks = { workspace = true }
+pulsefm-tally-worker = { workspace = true }
