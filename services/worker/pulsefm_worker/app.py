@@ -49,7 +49,6 @@ image = (
         "torchaudio==2.8.0",
         "huggingface-hub",
         "google-cloud-storage",
-        "google-cloud-firestore",
         "git+https://github.com/ace-step/ACE-Step.git@6ae0852b1388de6dc0cca26b31a86d711f723cb3",
     )
     .run_function(download_models, gpu="L4")
@@ -161,23 +160,15 @@ class MusicGenerator:
             energy: Energy level
             window_id: Window identifier used for naming the output file
         """
-        request_id = str(uuid.uuid4())
-        logger.info("Generating song: request_id=%s window_id=%s", request_id, window_id)
+        logger.info("Generating song: window_id=%s", window_id)
 
         # Validate required fields
         if not genre or not mood or not energy:
-            logger.error("Missing genre/mood/energy for request %s. Ending execution.", request_id)
+            logger.error("Missing genre/mood/energy for window %s. Ending execution.", window_id)
             return
         if not window_id:
-            logger.error("Missing window_id for request %s. Ending execution.", request_id)
+            logger.error("Missing window_id for window %s. Ending execution.", window_id)
             return
-        
-        # Update status to "generating"
-        try:
-            doc_ref.update({"status": "generating"})
-            logger.info(f"Updated Firestore document {request_id} status to 'generating'")
-        except Exception as e:
-            logger.warning(f"Error updating Firestore status to 'generating': {e}. Continuing with generation.")
         
         generated_path = None
         
@@ -247,9 +238,8 @@ def main(genre: str = "pop", mood: str = "calm", energy: str = "mid", window_id:
         modal run pulsefm_worker/app.py --genre pop --mood calm --energy mid --window-id window-1
     
     The generated audio will be uploaded to the GCS bucket.
-    Genre, mood, and energy are read from the Firestore document.
     """
-    logger.info(f"Generating: request_id={request_id}")
+    logger.info(f"Generating: window_id={window_id}")
     
     generator = MusicGenerator()
     generator.generate.remote(genre=genre, mood=mood, energy=energy, window_id=window_id)
