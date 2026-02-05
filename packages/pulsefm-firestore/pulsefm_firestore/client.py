@@ -1,8 +1,8 @@
 from functools import lru_cache
 
-from google.cloud import firestore
+from google.cloud.firestore import AsyncClient
 
 
 @lru_cache(maxsize=1)
-def get_firestore_client() -> firestore.Client:
-    return firestore.Client()
+def get_firestore_client() -> AsyncClient:
+    return AsyncClient()
