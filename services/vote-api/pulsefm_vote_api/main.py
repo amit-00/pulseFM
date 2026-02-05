@@ -141,7 +141,7 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
         return True
 
     transaction = db.transaction()
-    created = _create_vote(transaction)
+    created = await _create_vote(transaction)
     if not created:
         raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
 
