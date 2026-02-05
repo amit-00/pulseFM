@@ -26,7 +26,6 @@ VOTE_WINDOWS_COLLECTION = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
 WINDOW_SECONDS = int(os.getenv("WINDOW_SECONDS", "300"))
 WINDOW_CHANGED_TOPIC = os.getenv("WINDOW_CHANGED_TOPIC", "window-changed")
 OPTIONS_PER_WINDOW = int(os.getenv("OPTIONS_PER_WINDOW", "4"))
-VOTE_OPTIONS = [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()]
 
 
 def _utc_now() -> datetime:
@@ -92,6 +91,10 @@ def _close_window(db: firestore.Client, state: Dict[str, Any]) -> Dict[str, Any]
     db.collection(VOTE_WINDOWS_COLLECTION).document(window_id).set(window_doc)
     db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
 
+    for option in options:
+        key = f"tally:{window_id}:{option}"
+        redis_client.delete(key)
+
     publish_json(WINDOW_CHANGED_TOPIC, {
         "windowId": window_id,
         "status": "CLOSED",
@@ -117,7 +120,8 @@ def _open_next_window(db: firestore.Client, version: int) -> Dict[str, Any]:
     redis_client = get_redis_client()
     for option in window_options:
         key = f"tally:{window_id}:{option}"
-        redis_client.set(key, 0, ex=WINDOW_SECONDS)
+        # Expire tallies after 2x window duration for fallback cleanup
+        redis_client.set(key, 0, ex=WINDOW_SECONDS * 2)
 
     publish_json(WINDOW_CHANGED_TOPIC, {
         "windowId": window_id,
