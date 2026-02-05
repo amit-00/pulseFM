@@ -2,21 +2,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import Cookie, FastAPI, HTTPException, Request, Response, status
-from google.cloud import firestore
+from fastapi import Cookie, FastAPI, HTTPException, Response, status
+from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_firestore.client import get_firestore_client
-from pulsefm_pubsub.utils import publish_json
-from pulsefm_redis.client import get_redis_client
+from pulsefm_tasks.client import enqueue_json_task
 
 from pulsefm_vote_api.config import settings
-from pulsefm_vote_api.redis_keys import (
-    dedupe_key,
-    minute_bucket,
-    rate_limit_ip_key,
-    rate_limit_session_key,
-)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,16 +25,9 @@ class VoteError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
 
 
-def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
-def _get_vote_state(db: firestore.Client) -> Dict[str, Any]:
+async def _get_vote_state(db: AsyncClient) -> Dict[str, Any]:
     doc_ref = db.collection(settings.firestore_vote_state_collection).document("current")
-    doc = doc_ref.get()
+    doc = await doc_ref.get()
     if not doc.exists:
         raise VoteError(status.HTTP_404_NOT_FOUND, "Vote window not initialized")
     return doc.to_dict() or {}
@@ -65,12 +51,8 @@ def _serialize_timestamp(value: Any) -> str | None:
     return None
 
 
-def _enforce_rate_limit(redis_client, key: str, limit: int) -> None:
-    count = redis_client.incr(key)
-    if count == 1:
-        redis_client.expire(key, 60)
-    if count > limit:
-        raise VoteError(status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit exceeded")
+def _vote_doc_id(window_id: str, session_id: str) -> str:
+    return f"{window_id}:{session_id}"
 
 
 @app.post("/session")
@@ -93,21 +75,22 @@ def create_session(response: Response) -> Dict[str, str]:
 
 
 @app.get("/window")
-def get_window() -> Dict[str, Any]:
+async def get_window() -> Dict[str, Any]:
     db = get_firestore_client()
-    state = _get_vote_state(db)
+    state = await _get_vote_state(db)
     return {
         "windowId": state.get("windowId"),
         "status": state.get("status"),
         "startAt": _serialize_timestamp(state.get("startAt")),
         "endAt": _serialize_timestamp(state.get("endAt")),
         "options": state.get("options", []),
+        "tallies": state.get("tallies", {}),
         "version": state.get("version"),
     }
 
 
 @app.post("/vote")
-def submit_vote(request: Request, payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, Any]:
+async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, Any]:
     if not session_cookie:
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
 
@@ -125,7 +108,7 @@ def submit_vote(request: Request, payload: Dict[str, Any], session_cookie: Optio
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing option")
 
     db = get_firestore_client()
-    state = _get_vote_state(db)
+    state = await _get_vote_state(db)
     if state.get("status") != "OPEN":
         raise VoteError(status.HTTP_409_CONFLICT, "Voting window is closed")
 
@@ -138,20 +121,32 @@ def submit_vote(request: Request, payload: Dict[str, Any], session_cookie: Optio
     if now >= end_at:
         raise VoteError(status.HTTP_409_CONFLICT, "Voting window has ended")
 
-    redis_client = get_redis_client()
-    bucket = minute_bucket(now)
-    _enforce_rate_limit(redis_client, rate_limit_session_key(session_id, bucket), settings.rate_limit_session_per_min)
+    window_id = state.get("windowId") or ""
+    vote_id = _vote_doc_id(window_id, session_id)
+    votes_ref = db.collection(settings.firestore_votes_collection)
 
-    ip = _get_client_ip(request)
-    _enforce_rate_limit(redis_client, rate_limit_ip_key(ip, bucket), settings.rate_limit_ip_per_min)
+    @async_transactional
+    async def _create_vote(transaction: AsyncTransaction) -> bool:
+        vote_doc = votes_ref.document(vote_id)
+        snapshot = await vote_doc.get(transaction=transaction)
+        if snapshot.exists:
+            return False
+        transaction.set(vote_doc, {
+            "windowId": window_id,
+            "sessionId": session_id,
+            "option": option,
+            "votedAt": now,
+            "counted": False,
+        })
+        return True
 
-    ttl = int((end_at - now).total_seconds())
-    ttl = max(ttl, 1)
-
-    key = dedupe_key(state.get("windowId"), session_id)
-    set_ok = redis_client.set(key, option, nx=True, ex=ttl)
-    if not set_ok:
+    transaction = db.transaction()
+    created = _create_vote(transaction)
+    if not created:
         raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
+
+    if not settings.tally_worker_url:
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "TALLY_WORKER_URL is required")
 
     event = {
         "windowId": state.get("windowId"),
@@ -160,7 +155,11 @@ def submit_vote(request: Request, payload: Dict[str, Any], session_cookie: Optio
         "votedAt": now.isoformat(),
         "version": state.get("version"),
     }
-    publish_json(settings.vote_events_topic, event)
+    try:
+        enqueue_json_task(settings.vote_queue_name, settings.tally_worker_url, event)
+    except Exception:
+        await votes_ref.document(vote_id).delete()
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to enqueue vote")
 
     return {"status": "ok"}
 

@@ -5,30 +5,31 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 ## Endpoints
 - `POST /session` -> issues signed JWT cookie
 - `GET /window` -> returns current voting window
-- `POST /vote` -> submits a vote (rate limited + deduped)
+- `POST /vote` -> submits a vote (deduped via Firestore)
 - `GET /health`
 
 ## Required env vars
 - `PROJECT_ID`
+- `LOCATION`
 - `SESSION_JWT_SECRET`
-- `REDIS_URL`
+- `TALLY_WORKER_URL`
 
 ## Optional env vars
 - `SESSION_COOKIE_NAME` (default: `pulsefm_session`)
 - `SESSION_TTL_SECONDS` (default: 604800)
-- `VOTE_EVENTS_TOPIC` (default: `vote-events`)
+- `VOTE_QUEUE_NAME` (default: `vote-queue`)
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
 - `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
-- `RL_SESSION_PER_MIN` (default: 10)
-- `RL_IP_PER_MIN` (default: 60)
+- `VOTES_COLLECTION` (default: `votes`)
+- `TASKS_OIDC_SERVICE_ACCOUNT` (optional service account email for Cloud Tasks OIDC)
 
 ## Run locally
 ```
 docker compose -f services/vote-api/docker-compose.yml up --build
 ```
 
-## Pub/Sub push subscription
-Vote events are published to the `vote-events` topic as JSON payloads:
+## Cloud Tasks
+Votes are enqueued to the `vote-queue` Cloud Tasks queue with JSON payloads:
 ```
 {
   "windowId": "...",
@@ -38,3 +39,6 @@ Vote events are published to the `vote-events` topic as JSON payloads:
   "version": 1
 }
 ```
+
+## Dedupe
+Votes are deduped via the `votes` Firestore collection keyed by `{windowId}:{sessionId}`.
