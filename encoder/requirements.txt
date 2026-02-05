@@ -1,0 +1,5 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic-settings
+pydub==0.25.1
+google-cloud-storage

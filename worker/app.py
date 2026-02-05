@@ -83,7 +83,6 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
         "rock": "clean electric guitar, organ",
         "hip_hop": "rhodes piano, vinyl samples",
         "jazz": "rhodes piano, upright bass",
-        "classical": "grand piano, strings",
         "electronic": "analog synth, pad synth",
         "rnb": "rhodes piano, electric bass"
     }
