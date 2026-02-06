@@ -1,5 +1,6 @@
 locals {
   services = [
+    "cloudresourcemanager.googleapis.com",
     "run.googleapis.com",
     "eventarc.googleapis.com",
     "cloudtasks.googleapis.com",
