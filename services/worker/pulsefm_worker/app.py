@@ -149,7 +149,7 @@ class MusicGenerator:
         
     
     @modal.method()
-    def generate(self, genre: str, mood: str, energy: str, window_id: str | None = None) -> None:
+    def generate(self, genre: str, mood: str, energy: str, vote_id: str | None = None) -> None:
         """
         Generate audio and upload to GCS bucket.
         
@@ -157,16 +157,16 @@ class MusicGenerator:
             genre: Musical genre
             mood: Musical mood
             energy: Energy level
-            window_id: Window identifier used for naming the output file
+            vote_id: Vote identifier used for naming the output file
         """
-        logger.info("Generating song: window_id=%s", window_id)
+        logger.info("Generating song: vote_id=%s", vote_id)
 
         # Validate required fields
         if not genre or not mood or not energy:
-            logger.error("Missing genre/mood/energy for window %s. Ending execution.", window_id)
+            logger.error("Missing genre/mood/energy for vote %s. Ending execution.", vote_id)
             return
-        if not window_id:
-            logger.error("Missing window_id for window %s. Ending execution.", window_id)
+        if not vote_id:
+            logger.error("Missing vote_id for vote %s. Ending execution.", vote_id)
             return
         
         generated_path = None
@@ -213,7 +213,7 @@ class MusicGenerator:
             logger.info(f"Generated audio: {generated_path}")
             
             # Upload to GCS
-            blob_name = f"raw/{window_id}.wav"
+            blob_name = f"raw/{vote_id}.wav"
             blob = self.bucket.blob(blob_name)
             blob.upload_from_filename(str(generated_path), content_type="audio/wav")
             
@@ -229,18 +229,18 @@ class MusicGenerator:
 
 
 @app.local_entrypoint()
-def main(genre: str = "pop", mood: str = "calm", energy: str = "mid", window_id: str = "window-test"):
+def main(genre: str = "pop", mood: str = "calm", energy: str = "mid", vote_id: str = "vote-test"):
     """
     Local entrypoint for testing.
     
     Usage:
-        modal run pulsefm_worker/app.py --genre pop --mood calm --energy mid --window-id window-1
+        modal run pulsefm_worker/app.py --genre pop --mood calm --energy mid --vote-id vote-1
     
     The generated audio will be uploaded to the GCS bucket.
     """
-    logger.info(f"Generating: window_id={window_id}")
+    logger.info(f"Generating: vote_id={vote_id}")
     
     generator = MusicGenerator()
-    generator.generate.remote(genre=genre, mood=mood, energy=energy, window_id=window_id)
+    generator.generate.remote(genre=genre, mood=mood, energy=energy, vote_id=vote_id)
     
     logger.info("Generation complete - audio uploaded to GCS")
