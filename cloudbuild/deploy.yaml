@@ -1,11 +1,5 @@
 serviceAccount: projects/pulsefm-484500/serviceAccounts/cloud-build-deployer@pulsefm-484500.iam.gserviceaccount.com
-options:
-  logging: CLOUD_LOGGING_ONLY
-steps:
-  - name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "gcr.io/$PROJECT_ID/app", "."]
-images:
-  - gcr.io/$PROJECT_ID/app
+
 steps:
   - name: hashicorp/terraform:1.7.5
     id: terraform-init
@@ -95,4 +89,5 @@ substitutions:
   _TERRAFORM_SA: ""
 
 options:
+  logging: CLOUD_LOGGING_ONLY
   substitution_option: ALLOW_LOOSE
