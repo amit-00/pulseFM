@@ -1,7 +1,7 @@
 serviceAccount: projects/pulsefm-484500/serviceAccounts/cloud-build-deployer@pulsefm-484500.iam.gserviceaccount.com
 
 steps:
-  - name: hashicorp/terraform:1.7.5
+  - name: gcr.io/hashicorp-public/terraform:1.7.5
     id: terraform-init
     dir: terraform
     entrypoint: /bin/sh
@@ -11,7 +11,7 @@ steps:
       - -c
       - |
         terraform init
-  - name: hashicorp/terraform:1.7.5
+  - name: gcr.io/hashicorp-public/terraform:1.7.5
     id: terraform-apply
     dir: terraform
     entrypoint: /bin/sh
