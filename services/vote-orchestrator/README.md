@@ -1,9 +1,10 @@
 # Vote Orchestrator
 
-FastAPI service triggered by Cloud Scheduler to create/rotate voting windows, close windows, and compute winners from Firestore tallies.
+FastAPI service to open/close votes and compute winners from Firestore tallies.
 
 ## Endpoints
-- `POST /tick` -> create/rotate window
+- `POST /open` -> open a new vote (requires JSON body with `endsAt`)
+- `POST /close` -> close the current vote (idempotent)
 - `GET /health`
 
 ## Required env vars
@@ -15,15 +16,14 @@ FastAPI service triggered by Cloud Scheduler to create/rotate voting windows, cl
 - `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
 - `WINDOW_SECONDS` (default: 300)
 - `OPTIONS_PER_WINDOW` (default: 4)
-- `OPTIONS_PER_WINDOW` (default: 4)
 
 ## Run locally
 ```
 docker compose -f services/vote-orchestrator/docker-compose.yml up --build
 ```
 
-## Cloud Scheduler
-Configure Cloud Scheduler to `POST /tick` on a cadence (e.g., every minute).
+## Trigger
+Use Cloud Tasks (from playback-orchestrator) to call `POST /open` with `{ "endsAt": "<iso8601>" }`.
 
 ## Window options
 - If `VOTE_OPTIONS` is set, the orchestrator uses that list every window.

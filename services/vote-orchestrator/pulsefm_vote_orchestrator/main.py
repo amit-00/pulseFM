@@ -5,10 +5,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 import uuid
 
-from fastapi import FastAPI
+import modal
+from fastapi import FastAPI, HTTPException, status
+from google.cloud import firestore
 from google.cloud.firestore import AsyncClient
 
-from pulsefm_descriptors.data import get_descriptor_keys
+from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
 from pulsefm_firestore.client import get_firestore_client
 
 logging.basicConfig(
@@ -21,6 +23,7 @@ app = FastAPI(title="PulseFM Vote Orchestrator", version="1.0.0")
 
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTE_WINDOWS_COLLECTION = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
+HEARTBEAT_COLLECTION = os.getenv("HEARTBEAT_COLLECTION", "heartbeat")
 WINDOW_SECONDS = int(os.getenv("WINDOW_SECONDS", "300"))
 OPTIONS_PER_WINDOW = int(os.getenv("OPTIONS_PER_WINDOW", "4"))
 VOTE_OPTIONS = [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()]
@@ -40,19 +43,24 @@ def _parse_timestamp(value: Any) -> datetime:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        normalized = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized).astimezone(timezone.utc)
     raise ValueError("Invalid timestamp")
 
 
-def _build_window(window_id: str, start_at: datetime, end_at: datetime, options: list[str], version: int) -> Dict[str, Any]:
+def _build_vote(vote_id: str, start_at: datetime, end_at: datetime, options: list[str], version: int) -> Dict[str, Any]:
+    duration_ms = (end_at - start_at).total_seconds() * 1000
     return {
-        "windowId": window_id,
+        "voteId": vote_id,
         "status": "OPEN",
         "startAt": start_at,
+        "durationMs": duration_ms,
         "endAt": end_at,
         "options": options,
         "tallies": {option: 0 for option in options},
         "version": version,
-        "createdAt": start_at,
+        "createdAt": firestore.SERVER_TIMESTAMP,
     }
 
 
@@ -65,15 +73,57 @@ def _get_window_options() -> list[str]:
     return random.sample(options, OPTIONS_PER_WINDOW)
 
 
-async def _close_window(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
-    window_id = state.get("windowId")
+async def _get_active_listeners(db: AsyncClient) -> int:
+    """Read the heartbeat/main doc and return the active_listeners count."""
+    doc = await db.collection(HEARTBEAT_COLLECTION).document("main").get()
+    if not doc.exists:
+        return 0
+    data = doc.to_dict()
+    return data.get("active_listeners", 0) if data else 0
+
+
+async def _dispatch_modal_worker(vote_id: str, winner_option: str) -> None:
+    """Dispatch the Modal worker to generate music for the winning option."""
+    descriptor = DESCRIPTORS.get(winner_option)
+    if not descriptor:
+        logger.warning("No descriptor found for winner option: %s", winner_option)
+        return
+
+    genre = descriptor["genre"]
+    mood = descriptor["mood"]
+    energy = descriptor["energy"]
+
+    logger.info(
+        "Dispatching Modal worker: vote_id=%s, winner=%s, genre=%s, mood=%s, energy=%s",
+        vote_id, winner_option, genre, mood, energy
+    )
+
+    MusicGenerator = modal.Cls.from_name("pulsefm-worker", "MusicGenerator")
+    generator = MusicGenerator()
+    await generator.generate.spawn.aio(
+        genre=genre,
+        mood=mood,
+        energy=energy,
+        vote_id=vote_id
+    )
+
+
+def _pick_winner(tallies: Dict[str, Any]) -> str | None:
+    if not tallies:
+        return None
+    max_votes = max(tallies.values())
+    tied = [option for option, count in tallies.items() if count == max_votes]
+    return random.choice(tied) if tied else None
+
+
+async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
+    vote_id = state.get("voteId")
     tallies = state.get("tallies") or {}
+    if not vote_id:
+        raise ValueError("voteId missing from voteState/current")
+    winner_option = _pick_winner(tallies)
 
-    winner_option = None
-    if tallies:
-        winner_option = max(tallies.items(), key=lambda item: item[1])[0]
-
-    closed_at = _utc_now()
+    closed_at = firestore.SERVER_TIMESTAMP
 
     window_doc = {
         **state,
@@ -83,47 +133,76 @@ async def _close_window(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any
         "closedAt": closed_at,
     }
 
-    await db.collection(VOTE_WINDOWS_COLLECTION).document(window_id).set(window_doc)
+    await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
+
+    # Check active listeners and dispatch Modal worker if needed
+    if winner_option and vote_id:
+        active_listeners = await _get_active_listeners(db)
+        if active_listeners >= 1:
+            logger.info("Active listeners: %d, dispatching Modal worker", active_listeners)
+            await _dispatch_modal_worker(vote_id, winner_option)
+        else:
+            logger.info("No active listeners, skipping Modal worker dispatch")
 
     return window_doc
 
 
-async def _open_next_window(db: AsyncClient, version: int) -> Dict[str, Any]:
-    window_id = str(uuid.uuid4())
+async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Dict[str, Any]:
+    vote_id = str(uuid.uuid4())
     start_at = _utc_now()
-    end_at = start_at + timedelta(seconds=WINDOW_SECONDS)
     window_options = _get_window_options()
 
-    window_doc = _build_window(window_id, start_at, end_at, window_options, version)
+    window_doc = _build_vote(vote_id, start_at, end_at, window_options, version)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
 
     return window_doc
 
 
-@app.post("/tick")
-async def tick() -> Dict[str, Any]:
+@app.post("/close")
+async def close_vote() -> Dict[str, Any]:
+    db = get_firestore_client()
+    state = await _get_current_state(db)
+    if not state:
+        return {"status": "noop"}
+    if state.get("status") != "OPEN":
+        return {"status": "already_closed", "voteId": state.get("voteId")}
+    try:
+        window = await _close_vote(db, state)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    return {"status": "closed", "voteId": window.get("voteId")}
+
+
+@app.post("/open")
+async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    ends_at_raw = payload.get("endsAt")
+    if not ends_at_raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endsAt is required")
+    try:
+        ends_at_override = _parse_timestamp(ends_at_raw)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid endsAt")
+
     db = get_firestore_client()
     state = await _get_current_state(db)
 
     if not state:
-        window = await _open_next_window(db, 1)
-        return {"status": "opened", "windowId": window["windowId"]}
+        window = await _open_next_vote(db, 1, ends_at_override)
+        return {"status": "opened", "voteId": window["voteId"]}
 
-    status = state.get("status")
-    end_at = _parse_timestamp(state.get("endAt"))
-    now = _utc_now()
+    poll_status = state.get("status")
 
-    if status == "OPEN" and now >= end_at:
-        await _close_window(db, state)
-        window = await _open_next_window(db, int(state.get("version", 0)) + 1)
-        return {"status": "rotated", "windowId": window["windowId"]}
+    if poll_status == "OPEN":
+        try:
+            await _close_vote(db, state)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+        window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
+        return {"status": "rotated", "voteId": window["voteId"]}
 
-    if status == "CLOSED":
-        window = await _open_next_window(db, int(state.get("version", 0)) + 1)
-        return {"status": "opened", "windowId": window["windowId"]}
-
-    return {"status": "noop", "windowId": state.get("windowId")}
+    window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
+    return {"status": "opened", "voteId": window["voteId"]}
 
 
 @app.get("/health")
