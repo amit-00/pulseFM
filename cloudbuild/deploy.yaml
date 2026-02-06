@@ -65,14 +65,14 @@ steps:
       - -c
       - |
         set -e
-        VOTE_API_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA})
-        TALLY_WORKER_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:${SHORT_SHA})
-        VOTE_ORCH_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA})
-        ENCODER_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA})
-        gcloud run deploy vote-api --region ${_REGION} --image ${VOTE_API_DIGEST} --service-account vote-api@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
-        gcloud run deploy tally-worker --region ${_REGION} --image ${TALLY_WORKER_DIGEST} --service-account tally-worker@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
-        gcloud run deploy vote-orchestrator --region ${_REGION} --image ${VOTE_ORCH_DIGEST} --service-account vote-orchestrator@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
-        gcloud run deploy encoder --region ${_REGION} --image ${ENCODER_DIGEST} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        VOTE_API_DIGEST=$$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA})
+        TALLY_WORKER_DIGEST=$$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:${SHORT_SHA})
+        VOTE_ORCH_DIGEST=$$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA})
+        ENCODER_DIGEST=$$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA})
+        gcloud run deploy vote-api --region ${_REGION} --image $${VOTE_API_DIGEST} --service-account vote-api@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy tally-worker --region ${_REGION} --image $${TALLY_WORKER_DIGEST} --service-account tally-worker@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy vote-orchestrator --region ${_REGION} --image $${VOTE_ORCH_DIGEST} --service-account vote-orchestrator@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy encoder --region ${_REGION} --image $${ENCODER_DIGEST} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
 substitutions:
   _REGION: northamerica-northeast1
   _ARTIFACT_REPO: pulsefm
