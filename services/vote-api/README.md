@@ -12,12 +12,12 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 - `PROJECT_ID`
 - `LOCATION`
 - `SESSION_JWT_SECRET`
-- `TALLY_WORKER_URL`
+- `TALLY_FUNCTION_URL`
 
 ## Optional env vars
 - `SESSION_COOKIE_NAME` (default: `pulsefm_session`)
 - `SESSION_TTL_SECONDS` (default: 604800)
-- `VOTE_QUEUE_NAME` (default: `vote-queue`)
+- `VOTE_QUEUE_NAME` (default: `tally-queue`)
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
 - `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
 - `VOTES_COLLECTION` (default: `votes`)
@@ -29,10 +29,10 @@ docker compose -f services/vote-api/docker-compose.yml up --build
 ```
 
 ## Cloud Tasks
-Votes are enqueued to the `vote-queue` Cloud Tasks queue with JSON payloads:
+Votes are enqueued to the `tally-queue` Cloud Tasks queue with JSON payloads:
 ```
 {
-  "windowId": "...",
+  "voteId": "...",
   "option": "...",
   "sessionId": "...",
   "votedAt": "2024-01-01T00:00:00Z",
@@ -41,4 +41,4 @@ Votes are enqueued to the `vote-queue` Cloud Tasks queue with JSON payloads:
 ```
 
 ## Dedupe
-Votes are deduped via the `votes` Firestore collection keyed by `{windowId}:{sessionId}`.
+Votes are deduped via the `votes` Firestore collection keyed by `{voteId}:{sessionId}`.
