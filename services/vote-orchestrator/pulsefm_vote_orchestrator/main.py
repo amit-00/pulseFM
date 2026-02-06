@@ -155,6 +155,7 @@ async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Di
 
     window_doc = _build_vote(vote_id, start_at, end_at, window_options, version)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
+    await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
 
     return window_doc
 
