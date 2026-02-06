@@ -1,0 +1,90 @@
+steps:
+  - name: hashicorp/terraform:1.7.5
+    id: terraform-init
+    dir: terraform
+    entrypoint: /bin/sh
+    env:
+      - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_TERRAFORM_SA}
+    args:
+      - -c
+      - |
+        terraform init
+  - name: hashicorp/terraform:1.7.5
+    id: terraform-apply
+    dir: terraform
+    entrypoint: /bin/sh
+    env:
+      - GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${_TERRAFORM_SA}
+    args:
+      - -c
+      - |
+        terraform apply -auto-approve \
+          -var="project_id=${PROJECT_ID}" \
+          -var="region=${_REGION}" \
+          -var="artifact_repo=${_ARTIFACT_REPO}" \
+          -var="session_jwt_secret=${_SESSION_JWT_SECRET}" \
+          -var="vote_api_image=${_VOTE_API_IMAGE}" \
+          -var="tally_worker_image=${_TALLY_WORKER_IMAGE}" \
+          -var="vote_orchestrator_image=${_VOTE_ORCHESTRATOR_IMAGE}" \
+          -var="encoder_image=${_ENCODER_IMAGE}" \
+          -var="window_seconds=${_WINDOW_SECONDS}" \
+          -var="options_per_window=${_OPTIONS_PER_WINDOW}" \
+          -var="github_owner=${_GITHUB_OWNER}" \
+          -var="github_repo=${_GITHUB_REPO}" \
+          -var="github_branch=${_GITHUB_BRANCH}"
+  - name: gcr.io/cloud-builders/docker
+    id: build-vote-api
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}", "-f", "services/vote-api/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    id: push-vote-api
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}"]
+  - name: gcr.io/cloud-builders/docker
+    id: build-tally-worker
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:${SHORT_SHA}", "-f", "services/tally-worker/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    id: push-tally-worker
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:${SHORT_SHA}"]
+  - name: gcr.io/cloud-builders/docker
+    id: build-vote-orchestrator
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA}", "-f", "services/vote-orchestrator/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    id: push-vote-orchestrator
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA}"]
+  - name: gcr.io/cloud-builders/docker
+    id: build-encoder
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}", "-f", "services/encoder/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    id: push-encoder
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}"]
+  - name: gcr.io/cloud-builders/gcloud
+    id: deploy-services
+    entrypoint: /bin/sh
+    args:
+      - -c
+      - |
+        set -e
+        VOTE_API_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA})
+        TALLY_WORKER_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:${SHORT_SHA})
+        VOTE_ORCH_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA})
+        ENCODER_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA})
+        gcloud run deploy vote-api --region ${_REGION} --image ${VOTE_API_DIGEST} --service-account vote-api@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy tally-worker --region ${_REGION} --image ${TALLY_WORKER_DIGEST} --service-account tally-worker@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy vote-orchestrator --region ${_REGION} --image ${VOTE_ORCH_DIGEST} --service-account vote-orchestrator@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy encoder --region ${_REGION} --image ${ENCODER_DIGEST} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+substitutions:
+  _REGION: northamerica-northeast1
+  _ARTIFACT_REPO: pulsefm
+  _VOTE_API_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:placeholder"
+  _TALLY_WORKER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/tally-worker:placeholder"
+  _VOTE_ORCHESTRATOR_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:placeholder"
+  _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
+  _SESSION_JWT_SECRET: ""
+  _WINDOW_SECONDS: "300"
+  _OPTIONS_PER_WINDOW: "4"
+  _GITHUB_OWNER: ""
+  _GITHUB_REPO: ""
+  _GITHUB_BRANCH: "main"
+  _TERRAFORM_SA: ""
+
+options:
+  substitution_option: ALLOW_LOOSE

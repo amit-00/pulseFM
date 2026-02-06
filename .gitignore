@@ -1,2 +1,10 @@
 venv/
 *.egg-info/
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+__pycache__/
+*.pyc
+node_modules/
+.env
