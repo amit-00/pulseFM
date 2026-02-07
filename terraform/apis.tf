@@ -7,6 +7,7 @@ locals {
     "firestore.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "cloudfunctions.googleapis.com",
     "iam.googleapis.com",
     "storage.googleapis.com",
   ]
