@@ -12,18 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY packages/pulsefm-firestore packages/pulsefm-firestore
-COPY services/tally-worker services/tally-worker
+COPY packages/pulsefm-tasks packages/pulsefm-tasks
+COPY services/playback-orchestrator services/playback-orchestrator
 
 RUN pip install --no-cache-dir \
     ./packages/pulsefm-firestore \
-    ./services/tally-worker
+    ./packages/pulsefm-tasks \
+    ./services/playback-orchestrator
 
 RUN useradd -m -u 1000 appuser && \
     mkdir -p /app/credentials && \
     chown -R appuser:appuser /app && \
-    chmod +x /app/services/tally-worker/entrypoint.sh
+    chmod +x /app/services/playback-orchestrator/entrypoint.sh
 USER appuser
 
 EXPOSE 8080
 
-CMD ["/app/services/tally-worker/entrypoint.sh"]
+CMD ["/app/services/playback-orchestrator/entrypoint.sh"]

@@ -1,0 +1,24 @@
+services:
+  playback-orchestrator:
+    build:
+      context: ../..
+      dockerfile: services/playback-orchestrator/Dockerfile
+    container_name: pulsefm-playback-orchestrator
+    ports:
+      - "8093:8080"
+    environment:
+      - PORT=8080
+      - PROJECT_ID=${PROJECT_ID}
+      - LOCATION=${LOCATION}
+      - STATIONS_COLLECTION=stations
+      - SONGS_COLLECTION=songs
+      - VOTE_ORCHESTRATOR_QUEUE=vote-orchestrator-queue
+      - VOTE_ORCHESTRATOR_URL=${VOTE_ORCHESTRATOR_URL}
+      - TASKS_OIDC_SERVICE_ACCOUNT=${TASKS_OIDC_SERVICE_ACCOUNT}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
