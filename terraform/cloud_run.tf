@@ -117,6 +117,16 @@ resource "google_cloud_run_v2_service" "encoder" {
   }
 }
 
+locals {
+  # All Cloud Run services in the same project/region share the same URL suffix.
+  # Extract it from vote_orchestrator to avoid a self-referential block.
+  cloud_run_url_suffix = replace(
+    google_cloud_run_v2_service.vote_orchestrator.uri,
+    "https://vote-orchestrator",
+    ""
+  )
+}
+
 resource "google_cloud_run_v2_service" "playback_orchestrator" {
   name     = "playback-orchestrator"
   location = var.region
@@ -156,7 +166,7 @@ resource "google_cloud_run_v2_service" "playback_orchestrator" {
       }
       env {
         name  = "PLAYBACK_TICK_URL"
-        value = google_cloud_run_v2_service.playback_orchestrator.uri
+        value = "https://playback-orchestrator${local.cloud_run_url_suffix}"
       }
       env {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
