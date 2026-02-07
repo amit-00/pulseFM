@@ -29,7 +29,7 @@ resource "google_cloudfunctions2_function" "tally_function" {
   service_config {
     available_memory      = "256M"
     timeout_seconds       = 60
-    ingress_settings      = "ALLOW_ALL"
+    ingress_settings      = "ALLOW_INTERNAL_ONLY"
     service_account_email = google_service_account.tally_function.email
 
     environment_variables = {
