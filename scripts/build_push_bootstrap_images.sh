@@ -18,8 +18,8 @@ build_and_push() {
 }
 
 build_and_push vote-api services/vote-api/Dockerfile
-build_and_push tally-worker services/tally-worker/Dockerfile
 build_and_push vote-orchestrator services/vote-orchestrator/Dockerfile
 build_and_push encoder services/encoder/Dockerfile
+build_and_push playback-orchestrator services/playback-orchestrator/Dockerfile
 
 echo "Done. Images pushed to ${registry} with tag ${TAG}."

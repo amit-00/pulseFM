@@ -18,11 +18,6 @@ variable "vote_api_image" {
   description = "Container image for vote-api (tag or digest)"
 }
 
-variable "tally_worker_image" {
-  type        = string
-  description = "Container image for tally-worker (tag or digest)"
-}
-
 variable "vote_orchestrator_image" {
   type        = string
   description = "Container image for vote-orchestrator (tag or digest)"
@@ -31,6 +26,11 @@ variable "vote_orchestrator_image" {
 variable "encoder_image" {
   type        = string
   description = "Container image for encoder (tag or digest)"
+}
+
+variable "playback_orchestrator_image" {
+  type        = string
+  description = "Container image for playback-orchestrator (tag or digest)"
 }
 
 variable "session_jwt_secret" {

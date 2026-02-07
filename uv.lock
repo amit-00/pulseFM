@@ -16,7 +16,7 @@ members = [
     "pulsefm-firestore",
     "pulsefm-gcs",
     "pulsefm-models",
-    "pulsefm-tally-worker",
+    "pulsefm-playback-orchestrator",
     "pulsefm-tasks",
     "pulsefm-vote-api",
     "pulsefm-vote-orchestrator",
@@ -1291,12 +1291,13 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2.0,<3.0" }]
 
 [[package]]
-name = "pulsefm-tally-worker"
+name = "pulsefm-playback-orchestrator"
 version = "0.1.0"
-source = { editable = "services/tally-worker" }
+source = { editable = "services/playback-orchestrator" }
 dependencies = [
     { name = "fastapi" },
     { name = "pulsefm-firestore" },
+    { name = "pulsefm-tasks" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1304,6 +1305,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = "==0.104.1" },
     { name = "pulsefm-firestore", editable = "packages/pulsefm-firestore" },
+    { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
 ]
 

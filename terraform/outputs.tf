@@ -2,8 +2,8 @@ output "vote_api_url" {
   value = google_cloud_run_v2_service.vote_api.uri
 }
 
-output "tally_worker_url" {
-  value = google_cloud_run_v2_service.tally_worker.uri
+output "tally_function_url" {
+  value = google_cloudfunctions2_function.tally_function.service_config[0].uri
 }
 
 output "vote_orchestrator_url" {
@@ -14,8 +14,16 @@ output "encoder_url" {
   value = google_cloud_run_v2_service.encoder.uri
 }
 
-output "vote_queue" {
-  value = google_cloud_tasks_queue.vote_queue.name
+output "playback_orchestrator_url" {
+  value = google_cloud_run_v2_service.playback_orchestrator.uri
+}
+
+output "tally_queue" {
+  value = google_cloud_tasks_queue.tally_queue.name
+}
+
+output "vote_orchestrator_queue" {
+  value = google_cloud_tasks_queue.vote_orchestrator_queue.name
 }
 
 output "bucket_name" {
