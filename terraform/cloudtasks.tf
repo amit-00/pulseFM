@@ -7,3 +7,8 @@ resource "google_cloud_tasks_queue" "vote_orchestrator_queue" {
   name     = "vote-orchestrator-queue"
   location = var.region
 }
+
+resource "google_cloud_tasks_queue" "playback_queue" {
+  name     = "playback-queue"
+  location = var.region
+}

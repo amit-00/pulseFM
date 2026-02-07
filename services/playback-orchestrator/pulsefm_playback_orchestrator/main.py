@@ -7,7 +7,7 @@ from google.cloud import firestore
 from google.cloud.firestore import AsyncTransaction, async_transactional
 
 from pulsefm_firestore.client import get_firestore_client
-from pulsefm_tasks.client import enqueue_json_task
+from pulsefm_tasks.client import enqueue_json_task, enqueue_json_task_with_delay
 
 from pulsefm_playback_orchestrator.config import settings
 
@@ -114,7 +114,7 @@ async def tick() -> Dict[str, str]:
             song_ref = songs_ref.document(ready_song["id"])
             transaction.update(song_ref, {"status": "played"})
 
-        return {"endsAt": ends_at}
+        return {"endsAt": ends_at, "durationMs": duration_ms}
 
     transaction = db.transaction()
     try:
@@ -125,11 +125,29 @@ async def tick() -> Dict[str, str]:
     if not settings.vote_orchestrator_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="VOTE_ORCHESTRATOR_URL is required")
 
+    vote_orchestrator_url = settings.vote_orchestrator_url.rstrip("/") + "/open"
     vote_ends_at = result["endsAt"] - timedelta(seconds=20)
     enqueue_json_task(
         settings.vote_orchestrator_queue,
-        settings.vote_orchestrator_url,
+        vote_orchestrator_url,
         {"endsAt": vote_ends_at.isoformat()},
+    )
+
+    if not settings.playback_tick_url:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
+
+    playback_tick_url = settings.playback_tick_url.rstrip("/") + "/tick"
+    duration_ms = result.get("durationMs")
+    try:
+        delay_seconds = int(duration_ms) / 1000 if duration_ms else 30
+    except (TypeError, ValueError):
+        delay_seconds = 30
+
+    enqueue_json_task_with_delay(
+        settings.playback_queue,
+        playback_tick_url,
+        {},
+        int(delay_seconds),
     )
 
     return {"status": "ok"}

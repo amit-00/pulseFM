@@ -9,12 +9,14 @@ FastAPI service that updates the live station state from the next ready song and
 ## Required env vars
 - `PROJECT_ID`
 - `LOCATION`
-- `VOTE_ORCHESTRATOR_URL` (include `/open`)
+- `VOTE_ORCHESTRATOR_URL` (base service URL)
+- `PLAYBACK_TICK_URL` (base service URL)
 
 ## Optional env vars
 - `STATIONS_COLLECTION` (default: `stations`)
 - `SONGS_COLLECTION` (default: `songs`)
 - `VOTE_ORCHESTRATOR_QUEUE` (default: `vote-orchestrator-queue`)
+- `PLAYBACK_QUEUE_NAME` (default: `playback-queue`)
 - `TASKS_OIDC_SERVICE_ACCOUNT` (service account email for Cloud Tasks OIDC)
 
 ## Song selection

@@ -26,6 +26,10 @@ output "vote_orchestrator_queue" {
   value = google_cloud_tasks_queue.vote_orchestrator_queue.name
 }
 
+output "playback_queue" {
+  value = google_cloud_tasks_queue.playback_queue.name
+}
+
 output "bucket_name" {
   value = google_storage_bucket.generated_songs.name
 }

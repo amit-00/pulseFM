@@ -98,6 +98,7 @@ Idempotency record for tally function:
 Queues:
 - `tally-queue` (vote-api -> tally-function)
 - `vote-orchestrator-queue` (playback-orchestrator -> vote-orchestrator)
+- `playback-queue` (playback-orchestrator -> playback-orchestrator)
 
 ## Service responsibilities
 

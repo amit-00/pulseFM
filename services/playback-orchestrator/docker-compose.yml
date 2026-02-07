@@ -14,6 +14,8 @@ services:
       - SONGS_COLLECTION=songs
       - VOTE_ORCHESTRATOR_QUEUE=vote-orchestrator-queue
       - VOTE_ORCHESTRATOR_URL=${VOTE_ORCHESTRATOR_URL}
+      - PLAYBACK_QUEUE_NAME=playback-queue
+      - PLAYBACK_TICK_URL=${PLAYBACK_TICK_URL}
       - TASKS_OIDC_SERVICE_ACCOUNT=${TASKS_OIDC_SERVICE_ACCOUNT}
     restart: unless-stopped
     healthcheck:
