@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 from pydub import AudioSegment
-from google.cloud import storage
+from google.cloud import firestore, storage
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +24,7 @@ RAW_BUCKET = os.getenv("RAW_BUCKET", "pulsefm-generated-songs")
 RAW_PREFIX = os.getenv("RAW_PREFIX", "raw/")
 ENCODED_BUCKET = os.getenv("ENCODED_BUCKET", RAW_BUCKET)
 ENCODED_PREFIX = os.getenv("ENCODED_PREFIX", "encoded/")
+SONGS_COLLECTION = os.getenv("SONGS_COLLECTION", "songs")
 
 
 class GcsObject(BaseModel):
@@ -122,12 +123,14 @@ async def handle_event(request: Request) -> Dict[str, str]:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         input_path = Path(tmpdir) / Path(gcs_object.name).name
-        output_name = f"{Path(gcs_object.name).stem}.m4a"
+        vote_id = Path(gcs_object.name).stem
+        output_name = f"{vote_id}.m4a"
         output_path = Path(tmpdir) / output_name
 
         blob.download_to_filename(str(input_path))
 
         audio = AudioSegment.from_wav(str(input_path))
+        duration_ms = len(audio)
         audio.export(
             str(output_path),
             format="ipod",
@@ -150,5 +153,17 @@ async def handle_event(request: Request) -> Dict[str, str]:
             ENCODED_BUCKET,
             output_blob_name,
         )
+
+    try:
+        db = firestore.Client()
+        song_ref = db.collection(SONGS_COLLECTION).document(vote_id)
+        song_ref.set({
+            "durationMs": duration_ms,
+            "status": "ready",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+        logger.info("Updated songs/%s with durationMs=%s", vote_id, duration_ms)
+    except Exception as exc:
+        logger.exception("Failed to update songs/%s: %s", vote_id, exc)
 
     return {"status": "ok"}
