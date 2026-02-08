@@ -72,6 +72,12 @@ resource "google_project_iam_member" "terraform_editor" {
   member  = "serviceAccount:${google_service_account.terraform.email}"
 }
 
+resource "google_project_iam_member" "terraform_iam_admin" {
+  project = var.project_id
+  role    = "roles/resourcemanager.projectIamAdmin"
+  member  = "serviceAccount:${google_service_account.terraform.email}"
+}
+
 resource "google_service_account_iam_member" "terraform_act_as_vote_api" {
   service_account_id = google_service_account.vote_api.name
   role               = "roles/iam.serviceAccountUser"
@@ -105,7 +111,7 @@ resource "google_service_account_iam_member" "terraform_act_as_playback_orchestr
 resource "google_service_account_iam_member" "cloudbuild_impersonate_terraform" {
   service_account_id = google_service_account.terraform.name
   role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+  member             = "serviceAccount:cloud-build-deployer@${var.project_id}.iam.gserviceaccount.com"
 }
 
 resource "google_service_account_iam_member" "cloudtasks_token_creator" {
