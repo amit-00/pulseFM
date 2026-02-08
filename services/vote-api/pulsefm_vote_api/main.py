@@ -3,11 +3,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import Cookie, FastAPI, HTTPException, Response, status
-from google.cloud import firestore
-from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional
+from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
-from pulsefm_firestore.client import get_firestore_client
 from pulsefm_tasks.client import enqueue_json_task
 
 from pulsefm_vote_api.config import settings
@@ -19,6 +17,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PulseFM Vote API", version="1.0.0")
+_db: AsyncClient | None = None
+
+
+def get_firestore_client() -> AsyncClient:
+    global _db
+    if _db is None:
+        _db = AsyncClient()
+    return _db
 
 
 class VoteError(HTTPException):
@@ -150,7 +156,7 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
             "voteId": vote_id,
             "sessionId": session_id,
             "option": option,
-            "votedAt": firestore.SERVER_TIMESTAMP,
+            "votedAt": SERVER_TIMESTAMP,
             "counted": False,
         })
         return True

@@ -1,17 +1,15 @@
 import logging
 import os
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict
 import uuid
 
 import modal
 from fastapi import FastAPI, HTTPException, status
-from google.cloud import firestore
-from google.cloud.firestore import AsyncClient
+from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
 from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
-from pulsefm_firestore.client import get_firestore_client
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +18,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PulseFM Vote Orchestrator", version="1.0.0")
+_db: AsyncClient | None = None
+
+
+def get_firestore_client() -> AsyncClient:
+    global _db
+    if _db is None:
+        _db = AsyncClient()
+    return _db
 
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTE_WINDOWS_COLLECTION = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
@@ -60,7 +66,7 @@ def _build_vote(vote_id: str, start_at: datetime, end_at: datetime, options: lis
         "options": options,
         "tallies": {option: 0 for option in options},
         "version": version,
-        "createdAt": firestore.SERVER_TIMESTAMP,
+        "createdAt": SERVER_TIMESTAMP,
     }
 
 
@@ -123,7 +129,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("voteId missing from voteState/current")
     winner_option = _pick_winner(tallies)
 
-    closed_at = firestore.SERVER_TIMESTAMP
+    closed_at = SERVER_TIMESTAMP
 
     window_doc = {
         **state,

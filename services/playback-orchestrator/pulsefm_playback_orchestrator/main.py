@@ -4,10 +4,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, status
-from google.cloud import firestore
-from google.cloud.firestore import AsyncTransaction, async_transactional
+from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
 
-from pulsefm_firestore.client import get_firestore_client
 from pulsefm_tasks.client import enqueue_json_task, enqueue_json_task_with_delay
 
 from pulsefm_playback_orchestrator.config import settings
@@ -79,6 +77,16 @@ async def _ensure_playback_tick_scheduled() -> None:
 async def lifespan(app: FastAPI):
     await _ensure_playback_tick_scheduled()
     yield
+
+
+_db: AsyncClient | None = None
+
+
+def get_firestore_client() -> AsyncClient:
+    global _db
+    if _db is None:
+        _db = AsyncClient()
+    return _db
 
 
 app = FastAPI(title="PulseFM Playback Orchestrator", version="1.0.0", lifespan=lifespan)
@@ -158,7 +166,7 @@ async def tick() -> Dict[str, str]:
 
         transaction.update(station_ref, {
             "voteId": current_vote_id,
-            "startAt": firestore.SERVER_TIMESTAMP,
+            "startAt": SERVER_TIMESTAMP,
             "endAt": ends_at,
             "durationMs": duration_ms,
             "next": {

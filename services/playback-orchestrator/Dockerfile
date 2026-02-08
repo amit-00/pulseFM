@@ -11,12 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY packages/pulsefm-firestore packages/pulsefm-firestore
 COPY packages/pulsefm-tasks packages/pulsefm-tasks
 COPY services/playback-orchestrator services/playback-orchestrator
 
 RUN pip install --no-cache-dir \
-    ./packages/pulsefm-firestore \
     ./packages/pulsefm-tasks \
     ./services/playback-orchestrator
 

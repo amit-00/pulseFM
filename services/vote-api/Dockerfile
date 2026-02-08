@@ -12,13 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY packages/pulsefm-auth packages/pulsefm-auth
-COPY packages/pulsefm-firestore packages/pulsefm-firestore
 COPY packages/pulsefm-tasks packages/pulsefm-tasks
 COPY services/vote-api services/vote-api
 
 RUN pip install --no-cache-dir \
     ./packages/pulsefm-auth \
-    ./packages/pulsefm-firestore \
     ./packages/pulsefm-tasks \
     ./services/vote-api
 

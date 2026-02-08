@@ -1,9 +1,7 @@
 {
   "extraPaths": [
     "packages/pulsefm-descriptors",
-    "packages/pulsefm-firestore",
     "packages/pulsefm-models",
-    "packages/pulsefm-gcs",
     "packages/pulsefm-auth",
     "packages/pulsefm-tasks"
   ],

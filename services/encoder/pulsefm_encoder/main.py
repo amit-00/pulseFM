@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
 from pydub import AudioSegment
-from google.cloud import firestore, storage
+from google.cloud.storage import Client as StorageClient
+from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
 # Configure logging
 logging.basicConfig(
@@ -112,8 +113,8 @@ async def handle_event(request: Request) -> Dict[str, str]:
         logger.warning("File too large (event size): %s", gcs_object.size)
         return {"status": "skipped"}
 
-    client = storage.Client()
-    bucket = client.bucket(gcs_object.bucket)
+    storage_client = StorageClient()
+    bucket = storage_client.bucket(gcs_object.bucket)
     blob = bucket.blob(gcs_object.name)
     blob.reload()
 
@@ -139,7 +140,7 @@ async def handle_event(request: Request) -> Dict[str, str]:
             parameters=["-ar", "48000"],
         )
 
-        output_bucket = client.bucket(ENCODED_BUCKET)
+        output_bucket = storage_client.bucket(ENCODED_BUCKET)
         output_blob_name = f"{encoded_prefix}{output_name}"
         output_blob = output_bucket.blob(output_blob_name)
         output_blob.upload_from_filename(
@@ -155,13 +156,13 @@ async def handle_event(request: Request) -> Dict[str, str]:
         )
 
     try:
-        db = firestore.Client()
+        db = AsyncClient()
         song_ref = db.collection(SONGS_COLLECTION).document(vote_id)
-        song_ref.set({
+        await song_ref.set({
             "durationMs": duration_ms,
             "status": "ready",
-            "createdAt": firestore.SERVER_TIMESTAMP,
-        }, merge=True)
+            "createdAt": SERVER_TIMESTAMP,
+        })
         logger.info("Updated songs/%s with durationMs=%s", vote_id, duration_ms)
     except Exception as exc:
         logger.exception("Failed to update songs/%s: %s", vote_id, exc)
