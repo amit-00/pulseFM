@@ -36,6 +36,12 @@ resource "google_project_iam_member" "playback_orchestrator_tasks" {
   member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
 }
 
+resource "google_project_iam_member" "encoder_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.encoder.email}"
+}
+
 resource "google_storage_bucket_iam_member" "encoder_bucket_access" {
   bucket = google_storage_bucket.generated_songs.name
   role   = "roles/storage.objectAdmin"
