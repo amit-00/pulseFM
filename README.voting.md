@@ -78,7 +78,7 @@ Idempotency record for tally function:
 
 ```json
 {
-  "duration": "number",
+  "durationMs": "number",
   "createdAt": "timestamp",
   "status": "ready | played"
 }
@@ -89,7 +89,7 @@ Idempotency record for tally function:
 ```json
 {
   "voteId": "string",
-  "duration": "number"
+  "durationMs": "number"
 }
 ```
 
@@ -116,7 +116,7 @@ Queues:
 - On close, persists `voteWindows` and dispatches the Modal worker if listeners exist
 
 ### playback-orchestrator
-- `POST /tick` advances station playback, marks songs played, and enqueues a vote-orchestrator open request
+- `POST /tick` advances station playback, marks songs played, enqueues a vote-orchestrator open request, and schedules the next playback tick
 
 ## Required environment variables
 
