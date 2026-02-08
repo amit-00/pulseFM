@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
+from google.api_core import exceptions as gax_exceptions
 from google.cloud import tasks_v2
 from google.protobuf import timestamp_pb2
 
@@ -33,7 +34,14 @@ def enqueue_json_task(queue_name: str, target_url: str, payload: Dict[str, Any])
     return response.name
 
 
-def enqueue_json_task_with_delay(queue_name: str, target_url: str, payload: Dict[str, Any], delay_seconds: int) -> str:
+def enqueue_json_task_with_delay(
+    queue_name: str,
+    target_url: str,
+    payload: Dict[str, Any],
+    delay_seconds: int,
+    task_id: str | None = None,
+    ignore_already_exists: bool = True,
+) -> str | None:
     project_id = os.getenv("PROJECT_ID", "")
     location = os.getenv("LOCATION", "")
     if not project_id or not location:
@@ -60,5 +68,13 @@ def enqueue_json_task_with_delay(queue_name: str, target_url: str, payload: Dict
     timestamp.FromDatetime(schedule_time)
     task["schedule_time"] = timestamp
 
-    response = client.create_task(request={"parent": parent, "task": task})
+    if task_id:
+        task["name"] = client.task_path(project_id, location, queue_name, task_id)
+
+    try:
+        response = client.create_task(request={"parent": parent, "task": task})
+    except gax_exceptions.AlreadyExists:
+        if ignore_already_exists:
+            return None
+        raise
     return response.name
