@@ -126,3 +126,15 @@ resource "google_project_iam_member" "gcs_pubsub_publisher" {
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:service-${data.google_project.current.number}@gs-project-accounts.iam.gserviceaccount.com"
 }
+
+resource "google_service_account_iam_member" "playback_orchestrator_act_as_self" {
+  service_account_id = google_service_account.playback_orchestrator.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+}
+
+resource "google_service_account_iam_member" "vote_api_act_as_self" {
+  service_account_id = google_service_account.vote_api.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.vote_api.email}"
+}
