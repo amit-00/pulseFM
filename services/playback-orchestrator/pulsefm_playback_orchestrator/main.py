@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -17,7 +18,70 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="PulseFM Playback Orchestrator", version="1.0.0")
+DEFAULT_STARTUP_DELAY_SECONDS = 30
+
+
+def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
+    if vote_id:
+        return f"playback-{vote_id}"
+    suffix = "unknown"
+    if ends_at:
+        suffix = str(int(ends_at.timestamp()))
+    return f"playback-{suffix}"
+
+
+async def _get_station_state(db) -> Dict[str, Any] | None:
+    doc = await db.collection(settings.stations_collection).document("main").get()
+    return doc.to_dict() if doc.exists else None
+
+
+def _remaining_delay_seconds(ends_at: Any) -> int | None:
+    if not ends_at:
+        return None
+    try:
+        parsed = _parse_timestamp(ends_at)
+    except ValueError:
+        return None
+    delta = (parsed - _utc_now()).total_seconds()
+    return max(0, int(delta))
+
+
+async def _ensure_playback_tick_scheduled() -> None:
+    if not settings.playback_tick_url:
+        return
+    db = get_firestore_client()
+    station = await _get_station_state(db)
+    if not station:
+        return
+    ends_at = station.get("endAt")
+    vote_id = station.get("voteId")
+    delay_seconds = _remaining_delay_seconds(ends_at)
+    if delay_seconds is None:
+        delay_seconds = DEFAULT_STARTUP_DELAY_SECONDS
+    parsed_end_at = None
+    if ends_at:
+        try:
+            parsed_end_at = _parse_timestamp(ends_at)
+        except ValueError:
+            parsed_end_at = None
+    task_id = _build_tick_task_id(vote_id, parsed_end_at)
+    enqueue_json_task_with_delay(
+        settings.playback_queue,
+        settings.playback_tick_url.rstrip("/") + "/tick",
+        {},
+        delay_seconds,
+        task_id=task_id,
+        ignore_already_exists=True,
+    )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await _ensure_playback_tick_scheduled()
+    yield
+
+
+app = FastAPI(title="PulseFM Playback Orchestrator", version="1.0.0", lifespan=lifespan)
 
 
 def _utc_now() -> datetime:
@@ -30,13 +94,6 @@ def _parse_timestamp(value: Any) -> datetime:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
     raise ValueError("Invalid timestamp")
-
-
-def _song_payload(doc_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "voteId": doc_id,
-        "duration": data.get("duration"),
-    }
 
 
 async def _get_ready_song(db) -> Optional[Dict[str, Any]]:
@@ -53,7 +110,7 @@ async def _get_ready_song(db) -> Optional[Dict[str, Any]]:
     data = doc.to_dict() or {}
     return {
         "id": doc.id,
-        "duration": data.get("duration"),
+        "duration": data.get("durationMs"),
         "createdAt": data.get("createdAt"),
     }
 
@@ -64,7 +121,7 @@ async def _get_stubbed_song(db) -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No ready song or stubbed song")
     data = doc.to_dict() or {}
     vote_id = data.get("voteId")
-    duration = data.get("duration")
+    duration = data.get("durationMs")
     if not vote_id or duration is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stubbed song missing fields")
     return {"id": vote_id, "duration": duration, "stubbed": True}
@@ -114,7 +171,7 @@ async def tick() -> Dict[str, str]:
             song_ref = songs_ref.document(ready_song["id"])
             transaction.update(song_ref, {"status": "played"})
 
-        return {"endsAt": ends_at, "durationMs": duration_ms}
+        return {"endsAt": ends_at, "durationMs": duration_ms, "voteId": current_vote_id}
 
     transaction = db.transaction()
     try:
@@ -143,11 +200,14 @@ async def tick() -> Dict[str, str]:
     except (TypeError, ValueError):
         delay_seconds = 30
 
+    task_id = _build_tick_task_id(result.get("voteId"), result.get("endsAt"))
     enqueue_json_task_with_delay(
         settings.playback_queue,
         playback_tick_url,
         {},
         int(delay_seconds),
+        task_id=task_id,
+        ignore_already_exists=True,
     )
 
     return {"status": "ok"}

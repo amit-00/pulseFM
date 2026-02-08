@@ -1,6 +1,6 @@
 # Playback Orchestrator
 
-FastAPI service that updates the live station state from the next ready song and enqueues a vote-orchestrator open request.
+FastAPI service that updates the live station state from the next ready song, enqueues a vote-orchestrator open request, and self-schedules the next playback tick.
 
 ## Endpoint
 - `POST /tick`
