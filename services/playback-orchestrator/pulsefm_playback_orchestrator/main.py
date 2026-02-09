@@ -20,12 +20,9 @@ DEFAULT_STARTUP_DELAY_SECONDS = 30
 
 
 def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
-    if vote_id:
-        return f"playback-{vote_id}"
-    suffix = "unknown"
-    if ends_at:
-        suffix = str(int(ends_at.timestamp()))
-    return f"playback-{suffix}"
+    suffix = vote_id or ""
+    timestamp = str(int(ends_at.timestamp())) if ends_at else ""
+    return f"playback-{suffix}-{timestamp}"
 
 
 async def _get_station_state(db) -> Dict[str, Any] | None:
