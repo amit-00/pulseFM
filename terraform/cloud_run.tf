@@ -74,7 +74,7 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
       }
       env {
         name  = "VOTE_ORCHESTRATOR_URL"
-        value = google_cloud_run_v2_service.vote_orchestrator.uri
+        value = "https://vote-orchestrator${local.cloud_run_url_suffix}"
       }
       env {
         name  = "WINDOW_SECONDS"
@@ -131,10 +131,10 @@ resource "google_cloud_run_v2_service" "encoder" {
 
 locals {
   # All Cloud Run services in the same project/region share the same URL suffix.
-  # Extract it from vote_orchestrator to avoid a self-referential block.
+  # Extract it from vote_api (which has no self-reference issues).
   cloud_run_url_suffix = replace(
-    google_cloud_run_v2_service.vote_orchestrator.uri,
-    "https://vote-orchestrator",
+    google_cloud_run_v2_service.vote_api.uri,
+    "https://vote-api",
     ""
   )
 }
