@@ -69,12 +69,24 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
         value = "voteWindows"
       }
       env {
+        name  = "VOTE_ORCHESTRATOR_QUEUE"
+        value = google_cloud_tasks_queue.vote_orchestrator_queue.name
+      }
+      env {
+        name  = "VOTE_ORCHESTRATOR_URL"
+        value = google_cloud_run_v2_service.vote_orchestrator.uri
+      }
+      env {
         name  = "WINDOW_SECONDS"
         value = tostring(var.window_seconds)
       }
       env {
         name  = "OPTIONS_PER_WINDOW"
         value = tostring(var.options_per_window)
+      }
+      env {
+        name  = "TASKS_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.vote_orchestrator.email
       }
     }
   }
@@ -199,6 +211,13 @@ resource "google_cloud_run_v2_service_iam_member" "vote_orchestrator_invoker" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "vote_orchestrator_self_invoker" {
+  name     = google_cloud_run_v2_service.vote_orchestrator.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.vote_orchestrator.email}"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "playback_orchestrator_invoker" {

@@ -13,6 +13,7 @@ dependencies = [
   "modal",
   "google-cloud-firestore",
   "pulsefm-descriptors",
+  "pulsefm-tasks",
 ]
 
 [tool.setuptools.packages.find]

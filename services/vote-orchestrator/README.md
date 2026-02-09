@@ -4,18 +4,21 @@ FastAPI service to open/close votes and compute winners from Firestore tallies.
 
 ## Endpoints
 - `POST /open` -> open a new vote (requires JSON body with `endsAt`)
-- `POST /close` -> close the current vote (idempotent)
+- `POST /close` -> close the current vote (idempotent, requires `voteId` in body)
 - `GET /health`
 
 ## Required env vars
 - `PROJECT_ID`
 - `VOTE_OPTIONS` (comma-separated) or `pulsefm-descriptors` (default)
+- `VOTE_ORCHESTRATOR_URL` (base service URL)
 
 ## Optional env vars
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
 - `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
+- `VOTE_ORCHESTRATOR_QUEUE` (default: `vote-orchestrator-queue`)
 - `WINDOW_SECONDS` (default: 300)
 - `OPTIONS_PER_WINDOW` (default: 4)
+- `TASKS_OIDC_SERVICE_ACCOUNT` (service account email for Cloud Tasks OIDC)
 
 ## Run locally
 ```

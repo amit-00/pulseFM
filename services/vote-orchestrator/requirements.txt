@@ -3,3 +3,4 @@ uvicorn[standard]==0.24.0
 modal
 google-cloud-firestore
 pulsefm-descriptors
+pulsefm-tasks

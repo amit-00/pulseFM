@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, status
 from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
 from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
+from pulsefm_tasks.client import enqueue_json_task_with_delay
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,8 @@ def get_firestore_client() -> AsyncClient:
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTE_WINDOWS_COLLECTION = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
 HEARTBEAT_COLLECTION = os.getenv("HEARTBEAT_COLLECTION", "heartbeat")
+VOTE_ORCHESTRATOR_QUEUE = os.getenv("VOTE_ORCHESTRATOR_QUEUE", "vote-orchestrator-queue")
+VOTE_ORCHESTRATOR_URL = os.getenv("VOTE_ORCHESTRATOR_URL", "")
 WINDOW_SECONDS = int(os.getenv("WINDOW_SECONDS", "300"))
 OPTIONS_PER_WINDOW = int(os.getenv("OPTIONS_PER_WINDOW", "4"))
 VOTE_OPTIONS = [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()]
@@ -154,6 +157,21 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     return window_doc
 
 
+def _schedule_close(vote_id: str, ends_at: datetime) -> None:
+    if not VOTE_ORCHESTRATOR_URL:
+        raise ValueError("VOTE_ORCHESTRATOR_URL is required")
+    delay_seconds = max(0, int((ends_at - _utc_now()).total_seconds()))
+    close_url = VOTE_ORCHESTRATOR_URL.rstrip("/") + "/close"
+    enqueue_json_task_with_delay(
+        VOTE_ORCHESTRATOR_QUEUE,
+        close_url,
+        {"voteId": vote_id},
+        delay_seconds,
+        task_id=f"close-{vote_id}",
+        ignore_already_exists=True,
+    )
+
+
 async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Dict[str, Any]:
     vote_id = str(uuid.uuid4())
     start_at = _utc_now()
@@ -167,11 +185,16 @@ async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Di
 
 
 @app.post("/close")
-async def close_vote() -> Dict[str, Any]:
+async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    vote_id = payload.get("voteId")
+    if not vote_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
     db = get_firestore_client()
     state = await _get_current_state(db)
     if not state:
         return {"status": "noop"}
+    if state.get("voteId") != vote_id:
+        return {"status": "vote_id_mismatch", "voteId": state.get("voteId")}
     if state.get("status") != "OPEN":
         return {"status": "already_closed", "voteId": state.get("voteId")}
     try:
@@ -196,6 +219,7 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if not state:
         window = await _open_next_vote(db, 1, ends_at_override)
+        _schedule_close(window["voteId"], ends_at_override)
         return {"status": "opened", "voteId": window["voteId"]}
 
     poll_status = state.get("status")
@@ -206,9 +230,11 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
         window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
+        _schedule_close(window["voteId"], ends_at_override)
         return {"status": "rotated", "voteId": window["voteId"]}
 
     window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
+    _schedule_close(window["voteId"], ends_at_override)
     return {"status": "opened", "voteId": window["voteId"]}
 
 

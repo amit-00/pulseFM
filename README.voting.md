@@ -112,7 +112,7 @@ Queues:
 
 ### vote-orchestrator
 - `POST /open` creates/rotates votes (requires `endsAt` in payload)
-- `POST /close` closes the current vote idempotently
+- `POST /close` closes the current vote idempotently (requires `voteId` in payload)
 - On close, persists `voteWindows` and dispatches the Modal worker if listeners exist
 
 ### playback-orchestrator

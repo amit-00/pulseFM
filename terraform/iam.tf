@@ -36,6 +36,12 @@ resource "google_project_iam_member" "playback_orchestrator_tasks" {
   member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
 }
 
+resource "google_project_iam_member" "vote_orchestrator_tasks" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+}
+
 resource "google_project_iam_member" "encoder_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -122,6 +128,12 @@ resource "google_service_account_iam_member" "cloudtasks_token_creator" {
 
 resource "google_service_account_iam_member" "cloudtasks_token_creator_playback" {
   service_account_id = google_service_account.playback_orchestrator.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
+}
+
+resource "google_service_account_iam_member" "cloudtasks_token_creator_vote_orchestrator" {
+  service_account_id = google_service_account.vote_orchestrator.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 }
