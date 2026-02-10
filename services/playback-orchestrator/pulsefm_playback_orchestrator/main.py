@@ -129,9 +129,9 @@ async def _get_stubbed_song(db) -> Dict[str, Any]:
     if not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No ready song or stubbed song")
     data = doc.to_dict() or {}
-    vote_id = data.get("voteId")
+    vote_id = doc.id
     duration = data.get("durationMs")
-    if not vote_id or duration is None:
+    if duration is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stubbed song missing fields")
     return {"id": vote_id, "duration": duration, "stubbed": True}
 
