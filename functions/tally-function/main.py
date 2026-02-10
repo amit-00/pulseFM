@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Any, Dict
 
@@ -6,6 +7,12 @@ from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transact
 
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTES_COLLECTION = os.getenv("VOTES_COLLECTION", "votes")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 db = AsyncClient()
 
@@ -24,6 +31,7 @@ def _success(status: str, extra: Dict[str, Any] | None = None, code: int = 200):
 @functions_framework.http
 async def tally_function(request):
     if request.method != "POST":
+        logger.warning("Invalid method", extra={"method": request.method})
         return _success("method_not_allowed", code=405)
 
     payload = request.get_json(silent=True) or {}
@@ -32,6 +40,7 @@ async def tally_function(request):
     option = payload.get("option")
 
     if not vote_id or not session_id or not option:
+        logger.warning("Missing fields", extra={"voteId": vote_id, "sessionId": session_id})
         return _success("missing_fields")
 
     vote_state_ref = db.collection(VOTE_STATE_COLLECTION).document("current")
@@ -71,6 +80,11 @@ async def tally_function(request):
     try:
         result = await _transaction_fn(transaction)
     except Exception:
+        logger.exception("Tally transaction failed", extra={"voteId": vote_id, "sessionId": session_id})
         return _success("error", code=500)
 
+    if result != "ok":
+        logger.info("Tally not applied", extra={"status": result, "voteId": vote_id, "sessionId": session_id})
+    else:
+        logger.info("Tally applied", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
     return _success(result)

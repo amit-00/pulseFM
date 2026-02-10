@@ -72,9 +72,11 @@ def _vote_doc_id(vote_id: str, session_id: str) -> str:
     return f"{vote_id}:{session_id}"
 
 
+
 @app.post("/session")
 def create_session(response: Response) -> Dict[str, str]:
     token, meta = issue_session_token(settings.jwt_secret, settings.session_ttl_seconds)
+    logger.info("Issued session", extra={"sessionId": meta["session_id"]})
 
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -95,6 +97,7 @@ def create_session(response: Response) -> Dict[str, str]:
 async def get_window() -> Dict[str, Any]:
     db = get_firestore_client()
     state = await _get_vote_state(db)
+    logger.info("Fetched vote window", extra={"voteId": state.get("voteId"), "status": state.get("status")})
     return {
         "voteId": state.get("voteId"),
         "status": state.get("status"),
@@ -109,37 +112,45 @@ async def get_window() -> Dict[str, Any]:
 @app.post("/vote")
 async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, Any]:
     if not session_cookie:
+        logger.warning("Missing session cookie")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
 
     if not settings.tally_function_url:
+        logger.error("Missing TALLY_FUNCTION_URL")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "TALLY_FUNCTION_URL is required")
 
     try:
         claims = verify_session_token(session_cookie, settings.jwt_secret)
     except Exception:
+        logger.warning("Invalid session cookie")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
     session_id = claims.get("sid")
     if not session_id:
+        logger.warning("Session cookie missing sid claim")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
     option = payload.get("option")
     if not option:
+        logger.warning("Missing vote option")
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing option")
 
     db = get_firestore_client()
     state = await _get_vote_state(db)
     if state.get("status") != "OPEN":
+        logger.info("Vote window closed", extra={"voteId": state.get("voteId"), "status": state.get("status")})
         raise VoteError(status.HTTP_409_CONFLICT, "Voting window is closed")
 
     window = await _get_vote_window(db, state.get("voteId") or "")
     options = window.get("options") or []
     if option not in options:
+        logger.info("Invalid option", extra={"voteId": state.get("voteId"), "option": option})
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid option")
 
     end_at = _parse_timestamp(state.get("endAt"))
     now = datetime.now(timezone.utc)
     if now >= end_at:
+        logger.info("Vote window ended", extra={"voteId": state.get("voteId")})
         raise VoteError(status.HTTP_409_CONFLICT, "Voting window has ended")
 
     vote_id = state.get("voteId") or ""
@@ -164,6 +175,7 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
     transaction = db.transaction()
     created = await _create_vote(transaction)
     if not created:
+        logger.info("Duplicate vote", extra={"voteId": vote_id, "sessionId": session_id})
         raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
 
     event = {
@@ -177,8 +189,10 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
         enqueue_json_task(settings.vote_queue_name, settings.tally_function_url, event)
     except Exception:
         await votes_ref.document(vote_doc_id).delete()
+        logger.exception("Failed to enqueue tally task", extra={"voteId": vote_id, "sessionId": session_id})
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to enqueue vote")
 
+    logger.info("Vote accepted", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
     return {"status": "ok"}
 
 

@@ -144,6 +144,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
 
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
+    logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
 
     # Check active listeners and dispatch Modal worker if needed
     if winner_option and vote_id:
@@ -162,6 +163,7 @@ def _schedule_close(vote_id: str, ends_at: datetime) -> None:
         raise ValueError("VOTE_ORCHESTRATOR_URL is required")
     delay_seconds = max(0, int((ends_at - _utc_now()).total_seconds()))
     close_url = VOTE_ORCHESTRATOR_URL.rstrip("/") + "/close"
+    logger.info("Scheduling close", extra={"voteId": vote_id, "delaySeconds": delay_seconds})
     enqueue_json_task_with_delay(
         VOTE_ORCHESTRATOR_QUEUE,
         close_url,
@@ -180,6 +182,7 @@ async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Di
     window_doc = _build_vote(vote_id, start_at, end_at, window_options, version)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
+    logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
 
     return window_doc
 
@@ -188,14 +191,18 @@ async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Di
 async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     vote_id = payload.get("voteId")
     if not vote_id:
+        logger.warning("Missing voteId on close")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
     db = get_firestore_client()
     state = await _get_current_state(db)
     if not state:
+        logger.info("Close noop; no state")
         return {"status": "noop"}
     if state.get("voteId") != vote_id:
+        logger.info("Close voteId mismatch", extra={"requested": vote_id, "current": state.get("voteId")})
         return {"status": "vote_id_mismatch", "voteId": state.get("voteId")}
     if state.get("status") != "OPEN":
+        logger.info("Already closed", extra={"voteId": state.get("voteId")})
         return {"status": "already_closed", "voteId": state.get("voteId")}
     try:
         window = await _close_vote(db, state)
@@ -208,6 +215,7 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     ends_at_raw = payload.get("endsAt")
     if not ends_at_raw:
+        logger.warning("Missing endsAt on open")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endsAt is required")
     try:
         ends_at_override = _parse_timestamp(ends_at_raw)

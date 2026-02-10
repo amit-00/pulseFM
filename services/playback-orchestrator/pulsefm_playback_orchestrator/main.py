@@ -25,6 +25,7 @@ def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
     return f"playback-{suffix}-{timestamp}"
 
 
+
 async def _get_station_state(db) -> Dict[str, Any] | None:
     doc = await db.collection(settings.stations_collection).document("main").get()
     return doc.to_dict() if doc.exists else None
@@ -43,10 +44,12 @@ def _remaining_delay_seconds(ends_at: Any) -> int | None:
 
 async def _ensure_playback_tick_scheduled() -> None:
     if not settings.playback_tick_url:
+        logger.warning("PLAYBACK_TICK_URL not set; skipping startup scheduling")
         return
     db = get_firestore_client()
     station = await _get_station_state(db)
     if not station:
+        logger.warning("stations/main missing; skipping startup scheduling")
         return
     ends_at = station.get("endAt")
     vote_id = station.get("voteId")
@@ -68,6 +71,7 @@ async def _ensure_playback_tick_scheduled() -> None:
         task_id=task_id,
         ignore_already_exists=True,
     )
+    logger.info("Startup tick scheduled", extra={"voteId": vote_id, "delaySeconds": delay_seconds})
 
 
 @asynccontextmanager
@@ -139,6 +143,7 @@ async def tick() -> Dict[str, str]:
     ready_song = await _get_ready_song(db)
     if ready_song is None:
         ready_song = await _get_stubbed_song(db)
+    logger.info("Selected song", extra={"voteId": ready_song.get("id"), "stubbed": ready_song.get("stubbed", False)})
 
     station_ref = db.collection(settings.stations_collection).document("main")
     songs_ref = db.collection(settings.songs_collection)
@@ -182,6 +187,7 @@ async def tick() -> Dict[str, str]:
     try:
         result = await _transaction_fn(transaction)
     except ValueError as exc:
+        logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
     if not settings.vote_orchestrator_url:
@@ -194,6 +200,7 @@ async def tick() -> Dict[str, str]:
         vote_orchestrator_url,
         {"endsAt": vote_ends_at.isoformat()},
     )
+    logger.info("Enqueued vote open", extra={"voteEndsAt": vote_ends_at.isoformat()})
 
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
@@ -214,6 +221,7 @@ async def tick() -> Dict[str, str]:
         task_id=task_id,
         ignore_already_exists=True,
     )
+    logger.info("Scheduled next tick", extra={"voteId": result.get("voteId"), "delaySeconds": int(delay_seconds)})
 
     return {"status": "ok"}
 
