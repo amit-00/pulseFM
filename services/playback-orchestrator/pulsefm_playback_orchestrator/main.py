@@ -140,9 +140,19 @@ async def _get_stubbed_song(db) -> Dict[str, Any]:
 async def tick() -> Dict[str, str]:
     db = get_firestore_client()
 
-    ready_song = await _get_ready_song(db)
+    try:
+        ready_song = await _get_ready_song(db)
+    except Exception:
+        logger.exception("Failed to get ready song")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get ready song")
+    
     if ready_song is None:
-        ready_song = await _get_stubbed_song(db)
+        try:
+            ready_song = await _get_stubbed_song(db)
+        except Exception:
+            logger.exception("Failed to get stubbed song")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get stubbed song")
+            
     logger.info("Selected song", extra={"voteId": ready_song.get("id"), "stubbed": ready_song.get("stubbed", False)})
 
     station_ref = db.collection(settings.stations_collection).document("main")
