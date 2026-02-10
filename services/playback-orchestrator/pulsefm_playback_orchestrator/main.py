@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, status
-from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
+from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional
 
 from pulsefm_tasks.client import enqueue_json_task, enqueue_json_task_with_delay
 
@@ -158,10 +158,10 @@ async def tick() -> Dict[str, str]:
     station_ref = db.collection(settings.stations_collection).document("main")
     songs_ref = db.collection(settings.songs_collection)
 
-    now = _utc_now()
-
     @async_transactional
     async def _transaction_fn(transaction: AsyncTransaction) -> Dict[str, Any]:
+        now = _utc_now()
+
         station_snap = await station_ref.get(transaction=transaction)
         if not station_snap.exists:
             raise ValueError("stations/main not found")
@@ -178,7 +178,7 @@ async def tick() -> Dict[str, str]:
 
         transaction.update(station_ref, {
             "voteId": current_vote_id,
-            "startAt": SERVER_TIMESTAMP,
+            "startAt": now,
             "endAt": ends_at,
             "durationMs": duration_ms,
             "next": {
@@ -204,13 +204,13 @@ async def tick() -> Dict[str, str]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="VOTE_ORCHESTRATOR_URL is required")
 
     vote_orchestrator_url = settings.vote_orchestrator_url.rstrip("/") + "/open"
-    vote_ends_at = result["endsAt"] - timedelta(seconds=20)
+    vote_duration_ms = max(0, result["durationMs"] - 20_000)
     enqueue_json_task(
         settings.vote_orchestrator_queue,
         vote_orchestrator_url,
-        {"endsAt": vote_ends_at.isoformat()},
+        {"durationMs": vote_duration_ms},
     )
-    logger.info("Enqueued vote open", extra={"voteEndsAt": vote_ends_at.isoformat()})
+    logger.info("Enqueued vote open", extra={"voteDurationMs": vote_duration_ms})
 
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")

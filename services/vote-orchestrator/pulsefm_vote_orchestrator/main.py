@@ -1,7 +1,7 @@
 import logging
 import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 import uuid
 
@@ -58,8 +58,8 @@ def _parse_timestamp(value: Any) -> datetime:
     raise ValueError("Invalid timestamp")
 
 
-def _build_vote(vote_id: str, start_at: datetime, end_at: datetime, options: list[str], version: int) -> Dict[str, Any]:
-    duration_ms = (end_at - start_at).total_seconds() * 1000
+def _build_vote(vote_id: str, start_at: datetime, duration_ms: int, options: list[str], version: int) -> Dict[str, Any]:
+    end_at = start_at + timedelta(milliseconds=duration_ms)
     return {
         "voteId": vote_id,
         "status": "OPEN",
@@ -174,12 +174,12 @@ def _schedule_close(vote_id: str, ends_at: datetime) -> None:
     )
 
 
-async def _open_next_vote(db: AsyncClient, version: int, end_at: datetime) -> Dict[str, Any]:
+async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Dict[str, Any]:
     vote_id = str(uuid.uuid4())
     start_at = _utc_now()
     window_options = _get_window_options()
 
-    window_doc = _build_vote(vote_id, start_at, end_at, window_options, version)
+    window_doc = _build_vote(vote_id, start_at, duration_ms, window_options, version)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
@@ -213,21 +213,23 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.post("/open")
 async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
-    ends_at_raw = payload.get("endsAt")
-    if not ends_at_raw:
-        logger.warning("Missing endsAt on open")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endsAt is required")
+    duration_ms_raw = payload.get("durationMs")
+    if duration_ms_raw is None:
+        logger.warning("Missing durationMs on open")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs is required")
     try:
-        ends_at_override = _parse_timestamp(ends_at_raw)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid endsAt")
+        duration_ms = int(duration_ms_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid durationMs")
+    if duration_ms < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must not be negative")
 
     db = get_firestore_client()
     state = await _get_current_state(db)
 
     if not state:
-        window = await _open_next_vote(db, 1, ends_at_override)
-        _schedule_close(window["voteId"], ends_at_override)
+        window = await _open_next_vote(db, 1, duration_ms)
+        _schedule_close(window["voteId"], window["endAt"])
         return {"status": "opened", "voteId": window["voteId"]}
 
     poll_status = state.get("status")
@@ -237,12 +239,12 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
             await _close_vote(db, state)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-        window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
-        _schedule_close(window["voteId"], ends_at_override)
+        window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
+        _schedule_close(window["voteId"], window["endAt"])
         return {"status": "rotated", "voteId": window["voteId"]}
 
-    window = await _open_next_vote(db, int(state.get("version", 0)) + 1, ends_at_override)
-    _schedule_close(window["voteId"], ends_at_override)
+    window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
+    _schedule_close(window["voteId"], window["endAt"])
     return {"status": "opened", "voteId": window["voteId"]}
 
 
