@@ -61,6 +61,14 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
     containers {
       image = var.vote_orchestrator_image
       env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "LOCATION"
+        value = var.region
+      }
+      env {
         name  = "VOTE_STATE_COLLECTION"
         value = "voteState"
       }
