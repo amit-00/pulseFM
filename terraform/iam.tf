@@ -163,6 +163,18 @@ resource "google_service_account_iam_member" "vote_api_act_as_self" {
   member             = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
+resource "google_storage_bucket_iam_member" "vote_api_bucket_viewer" {
+  bucket = google_storage_bucket.generated_songs.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.vote_api.email}"
+}
+
+resource "google_service_account_iam_member" "vote_api_sign_blobs" {
+  service_account_id = google_service_account.vote_api.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.vote_api.email}"
+}
+
 resource "google_service_account_iam_member" "vote_orchestrator_act_as_self" {
   service_account_id = google_service_account.vote_orchestrator.name
   role               = "roles/iam.serviceAccountUser"
