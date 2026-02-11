@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { DotMatrixVisualizer } from "./DotMatrixVisualizer";
 import { WaveformVisualizer } from "./WaveformVisualizer";
 import { PlayerControls } from "./PlayerControls";
-import { RequestForm } from "./RequestForm";
+import { VotePanel } from "./VotePanel";
 import { AuroraText } from "./ui/aurora-text";
 import { cn } from "@/lib/utils";
 
@@ -291,9 +291,9 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
             <div className="hidden md:block w-px h-16 bg-stone-700/30" />
             <div className="md:hidden h-px w-full bg-stone-700/30" />
 
-            {/* Request Form - inline */}
+            {/* Vote Panel - inline */}
             <div className="flex-1 md:max-w-md">
-              <RequestForm isPlaying={isPlaying} />
+              <VotePanel />
             </div>
           </div>
         </div>
