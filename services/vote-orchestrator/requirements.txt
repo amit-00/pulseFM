@@ -4,3 +4,4 @@ modal
 google-cloud-firestore
 pulsefm-descriptors
 pulsefm-tasks
+pulsefm-redis

@@ -11,6 +11,12 @@ from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
 from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
 from pulsefm_tasks.client import enqueue_json_task_with_delay
+from pulsefm_redis.client import (
+    close_poll_state,
+    get_redis_client,
+    set_current_poll,
+    set_poll_state,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,6 +164,28 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     return window_doc
 
 
+def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, duration_ms: int) -> None:
+    client = get_redis_client()
+
+    current_ttl_seconds = max(1, int((duration_ms * 2) / 1000))
+    state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
+
+    set_current_poll(client, vote_id, current_ttl_seconds)
+    set_poll_state(
+        client,
+        vote_id,
+        "open",
+        int(start_at.timestamp() * 1000),
+        int(end_at.timestamp() * 1000),
+        state_ttl_seconds,
+    )
+
+
+def _update_redis_on_close(vote_id: str) -> None:
+    client = get_redis_client()
+    close_poll_state(client, vote_id)
+
+
 def _schedule_close(vote_id: str, ends_at: datetime) -> None:
     if not VOTE_ORCHESTRATOR_URL:
         raise ValueError("VOTE_ORCHESTRATOR_URL is required")
@@ -206,7 +234,11 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "already_closed", "voteId": state.get("voteId")}
     try:
         window = await _close_vote(db, state)
+        _update_redis_on_close(window["voteId"])
     except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Failed to update Redis on close", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
     return {"status": "closed", "voteId": window.get("voteId")}
 
@@ -229,6 +261,11 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if not state:
         window = await _open_next_vote(db, 1, duration_ms)
+        try:
+            _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+        except Exception as exc:
+            logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
         _schedule_close(window["voteId"], window["endAt"])
         return {"status": "opened", "voteId": window["voteId"]}
 
@@ -240,10 +277,20 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
         window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
+        try:
+            _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+        except Exception as exc:
+            logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
         _schedule_close(window["voteId"], window["endAt"])
         return {"status": "rotated", "voteId": window["voteId"]}
 
     window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
+    try:
+        _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+    except Exception as exc:
+        logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
     _schedule_close(window["voteId"], window["endAt"])
     return {"status": "opened", "voteId": window["voteId"]}
 

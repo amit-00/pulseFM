@@ -3,7 +3,8 @@
     "packages/pulsefm-descriptors",
     "packages/pulsefm-models",
     "packages/pulsefm-auth",
-    "packages/pulsefm-tasks"
+    "packages/pulsefm-tasks",
+    "packages/pulsefm-redis"
   ],
   "venvPath": ".",
   "venv": ".venv"

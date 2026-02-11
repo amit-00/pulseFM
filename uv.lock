@@ -1321,6 +1321,7 @@ dependencies = [
     { name = "google-cloud-firestore" },
     { name = "modal" },
     { name = "pulsefm-descriptors" },
+    { name = "pulsefm-redis" },
     { name = "pulsefm-tasks" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1331,6 +1332,7 @@ requires-dist = [
     { name = "google-cloud-firestore" },
     { name = "modal" },
     { name = "pulsefm-descriptors", editable = "packages/pulsefm-descriptors" },
+    { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
     { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
 ]
