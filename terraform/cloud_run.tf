@@ -43,6 +43,14 @@ resource "google_cloud_run_v2_service" "vote_api" {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
         value = google_service_account.vote_api.email
       }
+      env {
+        name  = "ENCODED_BUCKET"
+        value = "pulsefm-generated-songs"
+      }
+      env {
+        name  = "ENCODED_PREFIX"
+        value = "encoded/"
+      }
     }
   }
 

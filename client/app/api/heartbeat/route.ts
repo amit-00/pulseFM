@@ -1,42 +1,41 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const body = await request.json();
-    
+    const cookieStore = await cookies();
+    const allCookies = cookieStore.getAll();
+    const cookieHeader = allCookies
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
+
     const response = await fetch(
-      'http://localhost:8080/api/requests/',
+      'https://vote-api-156730433405.northamerica-northeast1.run.app/heartbeat',
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...(cookieHeader && { Cookie: cookieHeader }),
         },
-        body: JSON.stringify(body),
       }
     );
 
-    // Handle 4XX and 5XX errors
     if (!response.ok) {
       const status = response.status;
       let errorData;
       try {
         errorData = await response.json();
       } catch {
-        errorData = { error: response.statusText || 'Request failed' };
+        errorData = { error: response.statusText || 'Heartbeat failed' };
       }
       return NextResponse.json(errorData, { status });
     }
 
     const data = await response.json();
     return NextResponse.json(data);
-
   } catch (error) {
     return NextResponse.json(
-      { error: 'Failed to create request' },
+      { error: 'Failed to send heartbeat' },
       { status: 500 }
     );
   }
 }
-
-
-

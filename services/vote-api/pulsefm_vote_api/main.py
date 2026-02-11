@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import Cookie, FastAPI, HTTPException, Response, status
 from google.cloud.firestore import AsyncClient, AsyncTransaction, SERVER_TIMESTAMP, async_transactional
+from google.cloud.storage import Client as StorageClient
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PulseFM Vote API", version="1.0.0")
 _db: AsyncClient | None = None
+_storage: StorageClient | None = None
 
 
 def get_firestore_client() -> AsyncClient:
@@ -25,6 +27,13 @@ def get_firestore_client() -> AsyncClient:
     if _db is None:
         _db = AsyncClient()
     return _db
+
+
+def get_storage_client() -> StorageClient:
+    global _storage
+    if _storage is None:
+        _storage = StorageClient()
+    return _storage
 
 
 class VoteError(HTTPException):
@@ -220,6 +229,31 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
 
     logger.info("Vote accepted", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
     return {"status": "ok"}
+
+
+@app.post("/downloads")
+def create_download(payload: Dict[str, Any]) -> Dict[str, str]:
+    vote_id = payload.get("voteId")
+    if not vote_id:
+        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing voteId")
+
+    storage = get_storage_client()
+    bucket = storage.bucket(settings.encoded_bucket)
+    blob_name = f"{settings.encoded_prefix}{vote_id}.m4a"
+    blob = bucket.blob(blob_name)
+
+    if not blob.exists():
+        logger.warning("Blob not found", extra={"blob": blob_name})
+        raise VoteError(status.HTTP_404_NOT_FOUND, "Audio file not found")
+
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=15),
+        method="GET",
+        response_type="audio/mp4",
+    )
+    logger.info("Generated signed URL", extra={"voteId": vote_id})
+    return {"url": url}
 
 
 @app.get("/health")

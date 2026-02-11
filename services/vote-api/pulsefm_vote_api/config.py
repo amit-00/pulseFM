@@ -14,6 +14,8 @@ class Settings:
     firestore_vote_windows_collection: str = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
     firestore_votes_collection: str = os.getenv("VOTES_COLLECTION", "votes")
     firestore_heartbeats_collection: str = os.getenv("HEARTBEATS_COLLECTION", "heartbeats")
+    encoded_bucket: str = os.getenv("ENCODED_BUCKET", "pulsefm-generated-songs")
+    encoded_prefix: str = os.getenv("ENCODED_PREFIX", "encoded/")
 
     def cookie_max_age(self) -> int:
         return self.session_ttl_seconds
