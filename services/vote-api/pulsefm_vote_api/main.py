@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import Cookie, FastAPI, HTTPException, Response, status
-from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
+from google.cloud.firestore import AsyncClient, AsyncTransaction, SERVER_TIMESTAMP, async_transactional
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
@@ -92,6 +92,32 @@ def create_session(response: Response) -> Dict[str, str]:
         "expiresAt": meta["expires_at"].isoformat(),
     }
 
+
+@app.post("/heartbeat")
+async def send_heartbeat(session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)):
+    if not session_cookie:
+        logger.warning("Missing session cookie")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
+
+    try:
+        claims = verify_session_token(session_cookie, settings.jwt_secret)
+    except Exception:
+        logger.warning("Invalid session cookie")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+
+    session_id = claims.get("sid")
+    if not session_id:
+        logger.warning("Session cookie missing sid claim")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+
+    db = get_firestore_client()
+    heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(session_id)
+    await heartbeat_ref.set({
+        "sessionId": session_id,
+        "heartbeatAt": SERVER_TIMESTAMP,
+    })
+
+    return {"status": "ok"}
 
 @app.get("/window")
 async def get_window() -> Dict[str, Any]:

@@ -13,6 +13,7 @@ class Settings:
     firestore_vote_state_collection: str = os.getenv("VOTE_STATE_COLLECTION", "voteState")
     firestore_vote_windows_collection: str = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
     firestore_votes_collection: str = os.getenv("VOTES_COLLECTION", "votes")
+    firestore_heartbeats_collection: str = os.getenv("HEARTBEATS_COLLECTION", "heartbeats")
 
     def cookie_max_age(self) -> int:
         return self.session_ttl_seconds
