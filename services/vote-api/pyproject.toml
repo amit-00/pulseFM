@@ -12,6 +12,7 @@ dependencies = [
   "uvicorn[standard]==0.24.0",
   "pulsefm-auth",
   "google-cloud-firestore",
+  "google-cloud-storage",
   "pulsefm-tasks",
 ]
 
