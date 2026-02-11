@@ -5,6 +5,10 @@ resource "google_cloud_run_v2_service" "vote_api" {
 
   template {
     service_account = google_service_account.vote_api.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
     containers {
       image = var.vote_api_image
       env {
@@ -14,6 +18,14 @@ resource "google_cloud_run_v2_service" "vote_api" {
       env {
         name  = "LOCATION"
         value = var.region
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
       }
       env {
         name  = "SESSION_JWT_SECRET"
@@ -66,6 +78,10 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
 
   template {
     service_account = google_service_account.vote_orchestrator.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
     containers {
       image = var.vote_orchestrator_image
       env {
@@ -104,6 +120,14 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
         value = google_service_account.vote_orchestrator.email
       }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
+      }
     }
   }
 
@@ -119,6 +143,10 @@ resource "google_cloud_run_v2_service" "encoder" {
 
   template {
     service_account = google_service_account.encoder.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
     containers {
       image = var.encoder_image
       env {
@@ -136,6 +164,14 @@ resource "google_cloud_run_v2_service" "encoder" {
       env {
         name  = "ENCODED_PREFIX"
         value = "encoded/"
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
       }
     }
   }
@@ -162,6 +198,10 @@ resource "google_cloud_run_v2_service" "playback_orchestrator" {
 
   template {
     service_account = google_service_account.playback_orchestrator.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
     containers {
       image = var.playback_orchestrator_image
       env {
@@ -199,6 +239,14 @@ resource "google_cloud_run_v2_service" "playback_orchestrator" {
       env {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
         value = google_service_account.playback_orchestrator.email
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
       }
     }
   }

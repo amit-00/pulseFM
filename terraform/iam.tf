@@ -30,9 +30,21 @@ resource "google_project_iam_member" "vote_api_tasks" {
   member  = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
+resource "google_project_iam_member" "vote_api_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.vote_api.email}"
+}
+
 resource "google_project_iam_member" "playback_orchestrator_tasks" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+}
+
+resource "google_project_iam_member" "playback_orchestrator_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
 }
 
@@ -40,6 +52,24 @@ resource "google_project_iam_member" "vote_orchestrator_tasks" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"
   member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+}
+
+resource "google_project_iam_member" "vote_orchestrator_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+}
+
+resource "google_project_iam_member" "encoder_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.encoder.email}"
+}
+
+resource "google_project_iam_member" "tally_function_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.tally_function.email}"
 }
 
 resource "google_project_iam_member" "encoder_firestore" {

@@ -38,6 +38,22 @@ output "artifact_repo" {
   value = google_artifact_registry_repository.pulsefm.repository_id
 }
 
+output "memorystore_host" {
+  value = google_redis_instance.memorystore.host
+}
+
+output "memorystore_port" {
+  value = google_redis_instance.memorystore.port
+}
+
+output "memorystore_network" {
+  value = google_compute_network.memorystore.name
+}
+
+output "memorystore_connector" {
+  value = google_vpc_access_connector.memorystore.name
+}
+
 output "terraform_service_account" {
   value = google_service_account.terraform.email
 }

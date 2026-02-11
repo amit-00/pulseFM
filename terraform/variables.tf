@@ -49,6 +49,21 @@ variable "options_per_window" {
   default = 4
 }
 
+variable "memorystore_size_gb" {
+  type    = number
+  default = 1
+}
+
+variable "memorystore_subnet_cidr" {
+  type    = string
+  default = "10.10.0.0/24"
+}
+
+variable "memorystore_connector_cidr" {
+  type    = string
+  default = "10.8.0.0/28"
+}
+
 variable "github_owner" {
   type        = string
   description = "GitHub org/user for Cloud Build trigger"
