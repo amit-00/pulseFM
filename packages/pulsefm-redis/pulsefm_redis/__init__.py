@@ -2,6 +2,7 @@ from .client import (
     add_voted_session,
     close_poll_state,
     current_poll_key,
+    fixed_window_allow,
     get_redis_client,
     init_poll_tally,
     init_poll_voted_set,
@@ -11,12 +12,14 @@ from .client import (
     record_vote_atomic,
     set_current_poll,
     set_poll_state,
+    token_bucket_allow,
 )
 
 __all__ = [
     "add_voted_session",
     "close_poll_state",
     "current_poll_key",
+    "fixed_window_allow",
     "get_redis_client",
     "init_poll_tally",
     "init_poll_voted_set",
@@ -26,4 +29,5 @@ __all__ = [
     "record_vote_atomic",
     "set_current_poll",
     "set_poll_state",
+    "token_bucket_allow",
 ]

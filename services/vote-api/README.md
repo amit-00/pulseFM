@@ -4,7 +4,6 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 
 ## Endpoints
 - `POST /session` -> issues signed JWT cookie
-- `GET /window` -> returns current voting window
 - `POST /vote` -> submits a vote (deduped via Firestore)
 - `GET /health`
 

@@ -104,7 +104,6 @@ Queues:
 
 ### vote-api
 - `POST /session` issues a signed JWT session cookie (HMAC)
-- `GET /window` returns current window (from `voteState/current`)
 - `POST /vote` validates session, dedupes, and enqueues a Cloud Task
 
 ### tally-function

@@ -8,7 +8,7 @@ from google.cloud.storage import Client as StorageClient
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
-from pulsefm_redis.client import add_voted_session, get_redis_client
+from pulsefm_redis.client import add_voted_session, fixed_window_allow, get_redis_client, token_bucket_allow
 
 from pulsefm_vote_api.config import settings
 
@@ -68,23 +68,55 @@ def _parse_timestamp(value: Any) -> datetime:
     raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Invalid timestamp in vote state")
 
 
-def _serialize_timestamp(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).isoformat()
-    return None
-
-
 def _vote_doc_id(vote_id: str, session_id: str) -> str:
     return f"{vote_id}:{session_id}"
 
 
+def _rate_limited() -> None:
+    raise VoteError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited")
+
+
+async def _check_vote_rate_limits(redis_client, session_id: str, vote_id: str) -> None:
+    sess_key = f"pulsefm:rl:vote:sess:{session_id}"
+    poll_key = f"pulsefm:rl:vote:poll:{vote_id}"
+    if not await fixed_window_allow(redis_client, sess_key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+        _rate_limited()
+    if not await fixed_window_allow(redis_client, poll_key, settings.vote_rl_poll_limit, settings.vote_rl_poll_window):
+        _rate_limited()
+
+
+async def _check_heartbeat_rate_limit(redis_client, session_id: str) -> None:
+    key = f"pulsefm:rl:heartbeat:sess:{session_id}"
+    if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+        _rate_limited()
+
+
+async def _check_download_rate_limit(redis_client, session_id: str, vote_id: str) -> None:
+    key = f"pulsefm:rl:downloads:sess:{session_id}:poll:{vote_id}"
+    if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+        _rate_limited()
+
+
+async def _check_session_rate_limit(redis_client) -> None:
+    capacity = settings.session_rl_burst
+    refill_per_ms = (settings.session_rl_rate_per_min / 60) / 1000
+    allowed = await token_bucket_allow(
+        redis_client,
+        "pulsefm:rl:session:bucket",
+        "pulsefm:rl:session:rps",
+        capacity,
+        refill_per_ms,
+        1,
+        settings.session_rl_rps,
+    )
+    if not allowed:
+        _rate_limited()
+
 
 @app.post("/session")
-def create_session(response: Response) -> Dict[str, str]:
+async def create_session(response: Response) -> Dict[str, str]:
+    redis_client = get_redis_client()
+    await _check_session_rate_limit(redis_client)
     token, meta = issue_session_token(settings.jwt_secret, settings.session_ttl_seconds)
     logger.info("Issued session", extra={"sessionId": meta["session_id"]})
 
@@ -120,6 +152,9 @@ async def send_heartbeat(session_cookie: Optional[str] = Cookie(default=None, al
         logger.warning("Session cookie missing sid claim")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
+    redis_client = get_redis_client()
+    await _check_heartbeat_rate_limit(redis_client, session_id)
+
     db = get_firestore_client()
     heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(session_id)
     await heartbeat_ref.set({
@@ -128,22 +163,6 @@ async def send_heartbeat(session_cookie: Optional[str] = Cookie(default=None, al
     })
 
     return {"status": "ok"}
-
-@app.get("/window")
-async def get_window() -> Dict[str, Any]:
-    db = get_firestore_client()
-    state = await _get_vote_state(db)
-    logger.info("Fetched vote window", extra={"voteId": state.get("voteId"), "status": state.get("status")})
-    return {
-        "voteId": state.get("voteId"),
-        "status": state.get("status"),
-        "startAt": _serialize_timestamp(state.get("startAt")),
-        "endAt": _serialize_timestamp(state.get("endAt")),
-        "options": state.get("options", []),
-        "tallies": state.get("tallies", {}),
-        "version": state.get("version"),
-    }
-
 
 @app.post("/vote")
 async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, Any]:
@@ -191,6 +210,7 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
         raise VoteError(status.HTTP_409_CONFLICT, "Voting window has ended")
 
     vote_id = state.get("voteId") or ""
+    await _check_vote_rate_limits(redis_client, session_id, vote_id)
     vote_doc_id = _vote_doc_id(vote_id, session_id)
     votes_ref = db.collection(settings.firestore_votes_collection)
 
@@ -246,10 +266,28 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
 
 
 @app.post("/downloads")
-def create_download(payload: Dict[str, Any]) -> Dict[str, str]:
+async def create_download(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, str]:
     vote_id = payload.get("voteId")
     if not vote_id:
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing voteId")
+
+    if not session_cookie:
+        logger.warning("Missing session cookie")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
+
+    try:
+        claims = verify_session_token(session_cookie, settings.jwt_secret)
+    except Exception:
+        logger.warning("Invalid session cookie")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+
+    session_id = claims.get("sid")
+    if not session_id:
+        logger.warning("Session cookie missing sid claim")
+        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+
+    redis_client = get_redis_client()
+    await _check_download_rate_limit(redis_client, session_id, vote_id)
 
     storage = get_storage_client()
     bucket = storage.bucket(settings.encoded_bucket)
