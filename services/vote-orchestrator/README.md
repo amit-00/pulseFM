@@ -1,6 +1,6 @@
 # Vote Orchestrator
 
-FastAPI service to open/close votes and compute winners from Firestore tallies.
+FastAPI service to open/close votes and compute winners from Redis tallies.
 
 ## Endpoints
 - `POST /open` -> open a new vote (requires JSON body with `endsAt`)

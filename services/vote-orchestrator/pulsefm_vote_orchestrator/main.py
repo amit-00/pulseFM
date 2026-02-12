@@ -13,6 +13,7 @@ from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
 from pulsefm_tasks.client import enqueue_json_task_with_delay
 from pulsefm_redis.client import (
     close_poll_state,
+    get_poll_tallies,
     get_redis_client,
     init_poll_tally,
     init_poll_voted_set,
@@ -135,9 +136,15 @@ def _pick_winner(tallies: Dict[str, Any]) -> str | None:
 
 async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     vote_id = state.get("voteId")
-    tallies = state.get("tallies") or {}
     if not vote_id:
         raise ValueError("voteId missing from voteState/current")
+    try:
+        tallies = await get_poll_tallies(get_redis_client(), vote_id)
+    except Exception as exc:
+        logger.exception("Failed to load tallies from Redis", extra={"voteId": vote_id})
+        raise exc
+    if not tallies:
+        tallies = {option: 0 for option in (state.get("options") or [])}
     winner_option = _pick_winner(tallies)
 
     closed_at = SERVER_TIMESTAMP

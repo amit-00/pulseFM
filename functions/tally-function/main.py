@@ -1,14 +1,9 @@
 import logging
-import os
 from typing import Any, Dict
 
 import functions_framework
-from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP, Increment
 
-from pulsefm_redis.client import get_redis_client, record_vote_atomic
-
-VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
-VOTES_COLLECTION = os.getenv("VOTES_COLLECTION", "votes")
+from pulsefm_redis.client import get_redis_client, poll_state_key, poll_tally_key, record_vote_atomic
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,12 +11,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-db = AsyncClient()
 redis_client = get_redis_client()
-
-
-def _vote_doc_id(vote_id: str, session_id: str) -> str:
-    return f"{vote_id}:{session_id}"
 
 
 def _success(status: str, extra: Dict[str, Any] | None = None, code: int = 200):
@@ -46,58 +36,28 @@ async def tally_function(request):
         logger.warning("Missing fields", extra={"voteId": vote_id, "sessionId": session_id})
         return _success("missing_fields")
 
-    vote_state_ref = db.collection(VOTE_STATE_COLLECTION).document("current")
-    votes_ref = db.collection(VOTES_COLLECTION)
-    vote_doc_id = _vote_doc_id(vote_id, session_id)
-
-    @async_transactional
-    async def _transaction_fn(transaction: AsyncTransaction) -> str:
-        state_snapshot = await vote_state_ref.get(transaction=transaction)
-        if not state_snapshot.exists:
-            return "vote_not_initialized"
-        state = state_snapshot.to_dict() or {}
-        if state.get("voteId") != vote_id or state.get("status") != "OPEN":
-            return "vote_not_open"
-        options = state.get("options") or []
-        if option not in options:
-            return "invalid_option"
-
-        vote_doc_ref = votes_ref.document(vote_doc_id)
-        vote_snapshot = await vote_doc_ref.get(transaction=transaction)
-        if not vote_snapshot.exists:
-            return "vote_missing"
-        vote_data = vote_snapshot.to_dict() or {}
-        if vote_data.get("counted") is True:
-            return "duplicate"
-        if vote_data.get("option") and vote_data.get("option") != option:
-            return "option_mismatch"
-
-        transaction.update(vote_doc_ref, {
-            "counted": True,
-            "countedAt": SERVER_TIMESTAMP,
-        })
-        transaction.update(vote_state_ref, {f"tallies.{option}": Increment(1)})
-        return "ok"
-
-    transaction = db.transaction()
     try:
-        result = await _transaction_fn(transaction)
+        status_value = await redis_client.hget(poll_state_key(vote_id), "status") # type: ignore[misc]
+        if status_value != "open":
+            logger.info("Vote not open", extra={"voteId": vote_id, "status": status_value})
+            return _success("vote_not_open")
+
+        option_exists = await redis_client.hexists(poll_tally_key(vote_id), option) # type: ignore[misc]
+        if not option_exists:
+            logger.info("Invalid option", extra={"voteId": vote_id, "option": option})
+            return _success("invalid_option")
+
+        added = await record_vote_atomic(redis_client, vote_id, session_id, option)
     except Exception:
-        logger.exception("Tally transaction failed", extra={"voteId": vote_id, "sessionId": session_id})
+        logger.exception("Redis tally update failed", extra={"voteId": vote_id, "sessionId": session_id})
         return _success("error", code=500)
 
-    if result == "ok":
-        try:
-            added = await record_vote_atomic(redis_client, vote_id, session_id, option)
-            if not added:
-                logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": session_id})
-                return _success("duplicate")
-        except Exception:
-            logger.exception("Redis tally update failed", extra={"voteId": vote_id, "sessionId": session_id})
-            return _success("error", code=500)
+    if not added:
+        logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": session_id})
+        return _success("duplicate")
 
-    if result != "ok":
-        logger.info("Tally not applied", extra={"status": result, "voteId": vote_id, "sessionId": session_id})
-    else:
+    if added:
         logger.info("Tally applied", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
-    return _success(result)
+    else:
+        logger.info("Tally not applied", extra={"voteId": vote_id, "sessionId": session_id})
+    return _success("ok")

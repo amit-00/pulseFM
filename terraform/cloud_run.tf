@@ -40,18 +40,6 @@ resource "google_cloud_run_v2_service" "vote_api" {
         value = google_cloud_tasks_queue.tally_queue.name
       }
       env {
-        name  = "VOTE_STATE_COLLECTION"
-        value = "voteState"
-      }
-      env {
-        name  = "VOTE_WINDOWS_COLLECTION"
-        value = "voteWindows"
-      }
-      env {
-        name  = "VOTES_COLLECTION"
-        value = "votes"
-      }
-      env {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
         value = google_service_account.vote_api.email
       }

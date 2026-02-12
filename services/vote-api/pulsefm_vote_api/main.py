@@ -3,12 +3,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import Cookie, FastAPI, HTTPException, Response, status
-from google.cloud.firestore import AsyncClient, AsyncTransaction, SERVER_TIMESTAMP, async_transactional
+from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 from google.cloud.storage import Client as StorageClient
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
-from pulsefm_redis.client import add_voted_session, fixed_window_allow, get_redis_client, token_bucket_allow
+from pulsefm_redis.client import fixed_window_allow, get_redis_client, has_voted_session, poll_tally_key, token_bucket_allow
 
 from pulsefm_vote_api.config import settings
 
@@ -42,36 +42,6 @@ class VoteError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
 
 
-async def _get_vote_state(db: AsyncClient) -> Dict[str, Any]:
-    doc_ref = db.collection(settings.firestore_vote_state_collection).document("current")
-    doc = await doc_ref.get()
-    if not doc.exists:
-        raise VoteError(status.HTTP_404_NOT_FOUND, "Vote window not initialized")
-    return doc.to_dict() or {}
-
-
-async def _get_vote_window(db: AsyncClient, vote_id: str) -> Dict[str, Any]:
-    if not vote_id:
-        raise VoteError(status.HTTP_404_NOT_FOUND, "Vote window not initialized")
-    doc_ref = db.collection(settings.firestore_vote_windows_collection).document(vote_id)
-    doc = await doc_ref.get()
-    if not doc.exists:
-        raise VoteError(status.HTTP_404_NOT_FOUND, "Vote window not initialized")
-    return doc.to_dict() or {}
-
-
-def _parse_timestamp(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-    raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Invalid timestamp in vote state")
-
-
-def _vote_doc_id(vote_id: str, session_id: str) -> str:
-    return f"{vote_id}:{session_id}"
-
-
 def _rate_limited() -> None:
     raise VoteError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited")
 
@@ -79,43 +49,63 @@ def _rate_limited() -> None:
 async def _check_vote_rate_limits(redis_client, session_id: str, vote_id: str) -> None:
     sess_key = f"pulsefm:rl:vote:sess:{session_id}"
     poll_key = f"pulsefm:rl:vote:poll:{vote_id}"
-    if not await fixed_window_allow(redis_client, sess_key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-        _rate_limited()
-    if not await fixed_window_allow(redis_client, poll_key, settings.vote_rl_poll_limit, settings.vote_rl_poll_window):
-        _rate_limited()
+    try:
+        if not await fixed_window_allow(redis_client, sess_key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+            _rate_limited()
+        if not await fixed_window_allow(redis_client, poll_key, settings.vote_rl_poll_limit, settings.vote_rl_poll_window):
+            _rate_limited()
+    except Exception:
+        logger.exception("Redis rate limit failed", extra={"sessionId": session_id, "voteId": vote_id})
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
 
 async def _check_heartbeat_rate_limit(redis_client, session_id: str) -> None:
     key = f"pulsefm:rl:heartbeat:sess:{session_id}"
-    if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-        _rate_limited()
+    try:
+        if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+            _rate_limited()
+    except Exception:
+        logger.exception("Redis rate limit failed", extra={"sessionId": session_id})
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
 
 async def _check_download_rate_limit(redis_client, session_id: str, vote_id: str) -> None:
     key = f"pulsefm:rl:downloads:sess:{session_id}:poll:{vote_id}"
-    if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-        _rate_limited()
+    try:
+        if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
+            _rate_limited()
+    except Exception:
+        logger.exception("Redis rate limit failed", extra={"sessionId": session_id, "voteId": vote_id})
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
 
 async def _check_session_rate_limit(redis_client) -> None:
     capacity = settings.session_rl_burst
     refill_per_ms = (settings.session_rl_rate_per_min / 60) / 1000
-    allowed = await token_bucket_allow(
-        redis_client,
-        "pulsefm:rl:session:bucket",
-        "pulsefm:rl:session:rps",
-        capacity,
-        refill_per_ms,
-        1,
-        settings.session_rl_rps,
-    )
-    if not allowed:
-        _rate_limited()
+    try:
+        allowed = await token_bucket_allow(
+            redis_client,
+            "pulsefm:rl:session:bucket",
+            "pulsefm:rl:session:rps",
+            capacity,
+            refill_per_ms,
+            1,
+            settings.session_rl_rps,
+        )
+        if not allowed:
+            _rate_limited()
+    except Exception:
+        logger.exception("Redis rate limit failed for session bucket")
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
 
 @app.post("/session")
 async def create_session(response: Response) -> Dict[str, str]:
-    redis_client = get_redis_client()
+    try:
+        redis_client = get_redis_client()
+    except Exception:
+        logger.exception("Redis unavailable for session")
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
     await _check_session_rate_limit(redis_client)
     token, meta = issue_session_token(settings.jwt_secret, settings.session_ttl_seconds)
     logger.info("Issued session", extra={"sessionId": meta["session_id"]})
@@ -152,7 +142,11 @@ async def send_heartbeat(session_cookie: Optional[str] = Cookie(default=None, al
         logger.warning("Session cookie missing sid claim")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
-    redis_client = get_redis_client()
+    try:
+        redis_client = get_redis_client()
+    except Exception:
+        logger.exception("Redis unavailable for heartbeat")
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
     await _check_heartbeat_rate_limit(redis_client, session_id)
 
     db = get_firestore_client()
@@ -185,85 +179,58 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
         logger.warning("Session cookie missing sid claim")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
+    vote_id = payload.get("voteId")
     option = payload.get("option")
+    if not vote_id:
+        logger.warning("Missing voteId")
+        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing voteId")
     if not option:
         logger.warning("Missing vote option")
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing option")
 
-    db = get_firestore_client()
-    redis_client = get_redis_client()
-    state = await _get_vote_state(db)
-    if state.get("status") != "OPEN":
-        logger.info("Vote window closed", extra={"voteId": state.get("voteId"), "status": state.get("status")})
-        raise VoteError(status.HTTP_409_CONFLICT, "Voting window is closed")
-
-    window = await _get_vote_window(db, state.get("voteId") or "")
-    options = window.get("options") or []
-    if option not in options:
-        logger.info("Invalid option", extra={"voteId": state.get("voteId"), "option": option})
-        raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid option")
-
-    end_at = _parse_timestamp(state.get("endAt"))
-    now = datetime.now(timezone.utc)
-    if now >= end_at:
-        logger.info("Vote window ended", extra={"voteId": state.get("voteId")})
-        raise VoteError(status.HTTP_409_CONFLICT, "Voting window has ended")
-
-    vote_id = state.get("voteId") or ""
-    await _check_vote_rate_limits(redis_client, session_id, vote_id)
-    vote_doc_id = _vote_doc_id(vote_id, session_id)
-    votes_ref = db.collection(settings.firestore_votes_collection)
-
-    @async_transactional
-    async def _create_vote(transaction: AsyncTransaction) -> bool:
-        vote_doc = votes_ref.document(vote_doc_id)
-        snapshot = await vote_doc.get(transaction=transaction)
-        if snapshot.exists:
-            return False
-        transaction.set(vote_doc, {
-            "voteId": vote_id,
-            "sessionId": session_id,
-            "option": option,
-            "votedAt": SERVER_TIMESTAMP,
-            "counted": False,
-        })
-        return True
-
-    transaction = db.transaction()
-    created = await _create_vote(transaction)
-    if not created:
-        logger.info("Duplicate vote", extra={"voteId": vote_id, "sessionId": session_id})
-        raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
-
     try:
-        added = await add_voted_session(redis_client, vote_id, session_id)
-    except Exception:
-        logger.exception("Redis voted set update failed", extra={"voteId": vote_id, "sessionId": session_id})
-        await votes_ref.document(vote_doc_id).delete()
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to record vote")
+        redis_client = get_redis_client()
+        current_vote = await redis_client.get("pulsefm:poll:current")
+        if not current_vote:
+            logger.warning("No current poll in redis")
+            raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
+        if current_vote != vote_id:
+            logger.info("VoteId mismatch", extra={"requested": vote_id, "current": current_vote})
+            raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid voteId")
 
-    if not added:
-        logger.info("Already voted (redis)", extra={"voteId": vote_id, "sessionId": session_id})
-        await votes_ref.document(vote_doc_id).delete()
-        raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
+        options = await redis_client.hkeys(poll_tally_key(vote_id)) # type: ignore[misc]
+        if not options:
+            logger.warning("No poll options in redis", extra={"voteId": vote_id})
+            raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
+        if option not in options:
+            logger.info("Invalid option", extra={"voteId": vote_id, "option": option})
+            raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid option")
+
+        await _check_vote_rate_limits(redis_client, session_id, vote_id)
+
+        if await has_voted_session(redis_client, vote_id, session_id):
+            logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": session_id})
+            raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
+    except VoteError:
+        raise
+    except Exception:
+        logger.exception("Redis vote validation failed", extra={"voteId": vote_id, "sessionId": session_id})
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
     event = {
         "voteId": vote_id,
         "option": option,
         "sessionId": session_id,
-        "votedAt": now.isoformat(),
-        "version": state.get("version"),
+        "votedAt": datetime.now(timezone.utc).isoformat(),
     }
     try:
         enqueue_json_task(settings.vote_queue_name, settings.tally_function_url, event)
     except Exception:
-        await votes_ref.document(vote_doc_id).delete()
         logger.exception("Failed to enqueue tally task", extra={"voteId": vote_id, "sessionId": session_id})
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to enqueue vote")
 
     logger.info("Vote accepted", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
     return {"status": "ok"}
-
 
 @app.post("/downloads")
 async def create_download(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, str]:
@@ -286,7 +253,11 @@ async def create_download(payload: Dict[str, Any], session_cookie: Optional[str]
         logger.warning("Session cookie missing sid claim")
         raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
-    redis_client = get_redis_client()
+    try:
+        redis_client = get_redis_client()
+    except Exception:
+        logger.exception("Redis unavailable for downloads")
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
     await _check_download_rate_limit(redis_client, session_id, vote_id)
 
     storage = get_storage_client()

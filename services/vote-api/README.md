@@ -4,7 +4,7 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 
 ## Endpoints
 - `POST /session` -> issues signed JWT cookie
-- `POST /vote` -> submits a vote (deduped via Firestore)
+- `POST /vote` -> submits a vote (pre-checks dedupe via Redis, then enqueues)
 - `GET /health`
 
 ## Required env vars
@@ -17,9 +17,6 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 - `SESSION_COOKIE_NAME` (default: `pulsefm_session`)
 - `SESSION_TTL_SECONDS` (default: 604800)
 - `VOTE_QUEUE_NAME` (default: `tally-queue`)
-- `VOTE_STATE_COLLECTION` (default: `voteState`)
-- `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
-- `VOTES_COLLECTION` (default: `votes`)
 - `TASKS_OIDC_SERVICE_ACCOUNT` (optional service account email for Cloud Tasks OIDC)
 
 ## Run locally
@@ -40,4 +37,4 @@ Votes are enqueued to the `tally-queue` Cloud Tasks queue with JSON payloads:
 ```
 
 ## Dedupe
-Votes are deduped via the `votes` Firestore collection keyed by `{voteId}:{sessionId}`.
+Votes are pre-checked against the Redis `pulsefm:poll:{voteId}:voted` set before enqueueing.

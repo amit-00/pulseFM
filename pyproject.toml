@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["services/*", "packages/*"]
+members = ["services/*", "packages/*", "functions/*"]
 
 [tool.uv.sources]
 pulsefm-models = { workspace = true }

@@ -14,9 +14,6 @@ services:
       - SESSION_TTL_SECONDS=604800
       - VOTE_QUEUE_NAME=tally-queue
       - TALLY_FUNCTION_URL=${TALLY_FUNCTION_URL}
-      - VOTE_STATE_COLLECTION=voteState
-      - VOTE_WINDOWS_COLLECTION=voteWindows
-      - VOTES_COLLECTION=votes
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]

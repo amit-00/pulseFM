@@ -78,6 +78,22 @@ async def add_voted_session(client: redis.Redis, vote_id: str, session_id: str, 
     return added
 
 
+async def has_voted_session(client: redis.Redis, vote_id: str, session_id: str) -> bool:
+    key = poll_voted_key(vote_id)
+    return bool(await client.sismember(key, session_id))  # type: ignore[misc]
+
+
+async def get_poll_tallies(client: redis.Redis, vote_id: str) -> dict[str, int]:
+    raw = await client.hgetall(poll_tally_key(vote_id))  # type: ignore[misc]
+    tallies: dict[str, int] = {}
+    for option, value in raw.items():
+        try:
+            tallies[option] = int(value)
+        except (TypeError, ValueError):
+            tallies[option] = 0
+    return tallies
+
+
 VOTE_LUA = """
 local voted_key = KEYS[1]
 local tally_key = KEYS[2]
@@ -179,4 +195,7 @@ async def token_bucket_allow(
         tokens,
         rps_limit,
     )  # type: ignore[misc]
-    return int(result) == 1
+    allowed = int(result) == 1
+    # Keep the bucket hash from living forever.
+    await client.expire(bucket_key, 3600)
+    return allowed

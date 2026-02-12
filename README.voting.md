@@ -3,7 +3,7 @@
 This repo includes four FastAPI services that implement an anonymous voting system on Cloud Run:
 
 - **vote-api**: issues anonymous session cookies, accepts votes, dedupes, enqueues Cloud Tasks
-- **tally-function**: receives Cloud Tasks, updates Firestore tallies idempotently
+- **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **vote-orchestrator**: rotates vote windows in Firestore and dispatches the music worker
 - **playback-orchestrator**: advances station playback and triggers vote-orchestrator ticks
 
@@ -19,7 +19,6 @@ Pointer document read by all services:
   "startAt": "timestamp",
   "endAt": "timestamp",
   "options": ["string"],
-  "tallies": { "optionString": "number" },
   "version": "number",
   "createdAt": "timestamp",
   "closedAt": "timestamp (optional)"
@@ -37,26 +36,18 @@ History document per window:
   "endAt": "timestamp",
   "options": ["string"],
   "winnerOption": "string (set on close)",
-  "tallies": { "optionString": "number" },
   "version": "number",
   "createdAt": "timestamp",
   "closedAt": "timestamp"
 }
 ```
 
-### `votes` (doc: `{voteId}:{sessionId}`)
-Idempotency record for tally function:
+### Redis keys (canonical tally + dedupe)
 
-```json
-{
-  "voteId": "string",
-  "sessionId": "string",
-  "option": "string",
-  "votedAt": "timestamp",
-  "counted": "boolean (optional)",
-  "countedAt": "timestamp (optional)"
-}
-```
+- `pulsefm:poll:current` -> current `voteId`
+- `pulsefm:poll:{voteId}:state` -> HASH: `status`, `opensAt` (epoch ms), `closesAt` (epoch ms)
+- `pulsefm:poll:{voteId}:tally` -> HASH: `option` => count
+- `pulsefm:poll:{voteId}:voted` -> SET of sessionIds
 
 ### `stations` (doc: `main`)
 
@@ -104,10 +95,10 @@ Queues:
 
 ### vote-api
 - `POST /session` issues a signed JWT session cookie (HMAC)
-- `POST /vote` validates session, dedupes, and enqueues a Cloud Task
+- `POST /vote` validates session, rate-limits, pre-checks dedupe, and enqueues a Cloud Task
 
 ### tally-function
-- HTTP function that handles Cloud Tasks and increments Firestore tallies idempotently
+- HTTP function that handles Cloud Tasks and performs the atomic Redis vote operation idempotently
 
 ### vote-orchestrator
 - `POST /open` creates/rotates votes (requires `endsAt` in payload)
@@ -126,8 +117,7 @@ Queues:
 - `TALLY_FUNCTION_URL`
 
 ### tally-function
-- `VOTE_STATE_COLLECTION` (default: `voteState`)
-- `VOTES_COLLECTION` (default: `votes`)
+- no Firestore envs required (Redis only)
 
 ### vote-orchestrator
 - `PROJECT_ID`
