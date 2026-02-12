@@ -5,6 +5,8 @@ from typing import Any, Dict
 import functions_framework
 from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP, Increment
 
+from pulsefm_redis.client import get_redis_client, record_vote_atomic
+
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTES_COLLECTION = os.getenv("VOTES_COLLECTION", "votes")
 
@@ -15,6 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 db = AsyncClient()
+redis_client = get_redis_client()
 
 
 def _vote_doc_id(vote_id: str, session_id: str) -> str:
@@ -82,6 +85,16 @@ async def tally_function(request):
     except Exception:
         logger.exception("Tally transaction failed", extra={"voteId": vote_id, "sessionId": session_id})
         return _success("error", code=500)
+
+    if result == "ok":
+        try:
+            added = await record_vote_atomic(redis_client, vote_id, session_id, option)
+            if not added:
+                logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": session_id})
+                return _success("duplicate")
+        except Exception:
+            logger.exception("Redis tally update failed", extra={"voteId": vote_id, "sessionId": session_id})
+            return _success("error", code=500)
 
     if result != "ok":
         logger.info("Tally not applied", extra={"status": result, "voteId": vote_id, "sessionId": session_id})

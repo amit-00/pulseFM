@@ -13,11 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY packages/pulsefm-auth packages/pulsefm-auth
 COPY packages/pulsefm-tasks packages/pulsefm-tasks
+COPY packages/pulsefm-redis packages/pulsefm-redis
 COPY services/vote-api services/vote-api
 
 RUN pip install --no-cache-dir \
     ./packages/pulsefm-auth \
     ./packages/pulsefm-tasks \
+    ./packages/pulsefm-redis \
     ./services/vote-api
 
 RUN useradd -m -u 1000 appuser && \

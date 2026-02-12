@@ -1,17 +1,29 @@
 from .client import (
+    add_voted_session,
     close_poll_state,
     current_poll_key,
     get_redis_client,
+    init_poll_tally,
+    init_poll_voted_set,
     poll_state_key,
+    poll_tally_key,
+    poll_voted_key,
+    record_vote_atomic,
     set_current_poll,
     set_poll_state,
 )
 
 __all__ = [
+    "add_voted_session",
     "close_poll_state",
     "current_poll_key",
     "get_redis_client",
+    "init_poll_tally",
+    "init_poll_voted_set",
     "poll_state_key",
+    "poll_tally_key",
+    "poll_voted_key",
+    "record_vote_atomic",
     "set_current_poll",
     "set_poll_state",
 ]

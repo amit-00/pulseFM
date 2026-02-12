@@ -8,6 +8,7 @@ from google.cloud.storage import Client as StorageClient
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
+from pulsefm_redis.client import add_voted_session, get_redis_client
 
 from pulsefm_vote_api.config import settings
 
@@ -171,6 +172,7 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing option")
 
     db = get_firestore_client()
+    redis_client = get_redis_client()
     state = await _get_vote_state(db)
     if state.get("status") != "OPEN":
         logger.info("Vote window closed", extra={"voteId": state.get("voteId"), "status": state.get("status")})
@@ -211,6 +213,18 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
     created = await _create_vote(transaction)
     if not created:
         logger.info("Duplicate vote", extra={"voteId": vote_id, "sessionId": session_id})
+        raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
+
+    try:
+        added = await add_voted_session(redis_client, vote_id, session_id)
+    except Exception:
+        logger.exception("Redis voted set update failed", extra={"voteId": vote_id, "sessionId": session_id})
+        await votes_ref.document(vote_doc_id).delete()
+        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to record vote")
+
+    if not added:
+        logger.info("Already voted (redis)", extra={"voteId": vote_id, "sessionId": session_id})
+        await votes_ref.document(vote_doc_id).delete()
         raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
 
     event = {

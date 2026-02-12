@@ -14,6 +14,8 @@ from pulsefm_tasks.client import enqueue_json_task_with_delay
 from pulsefm_redis.client import (
     close_poll_state,
     get_redis_client,
+    init_poll_tally,
+    init_poll_voted_set,
     set_current_poll,
     set_poll_state,
 )
@@ -164,14 +166,14 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     return window_doc
 
 
-def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, duration_ms: int) -> None:
+async def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, duration_ms: int, options: list[str]) -> None:
     client = get_redis_client()
 
     current_ttl_seconds = max(1, int((duration_ms * 2) / 1000))
     state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
 
-    set_current_poll(client, vote_id, current_ttl_seconds)
-    set_poll_state(
+    await set_current_poll(client, vote_id, current_ttl_seconds)
+    await set_poll_state(
         client,
         vote_id,
         "open",
@@ -179,11 +181,13 @@ def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, du
         int(end_at.timestamp() * 1000),
         state_ttl_seconds,
     )
+    await init_poll_tally(client, vote_id, options, state_ttl_seconds)
+    await init_poll_voted_set(client, vote_id, state_ttl_seconds)
 
 
-def _update_redis_on_close(vote_id: str) -> None:
+async def _update_redis_on_close(vote_id: str) -> None:
     client = get_redis_client()
-    close_poll_state(client, vote_id)
+    await close_poll_state(client, vote_id)
 
 
 def _schedule_close(vote_id: str, ends_at: datetime) -> None:
@@ -234,7 +238,7 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "already_closed", "voteId": state.get("voteId")}
     try:
         window = await _close_vote(db, state)
-        _update_redis_on_close(window["voteId"])
+        await _update_redis_on_close(window["voteId"])
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
     except Exception as exc:
@@ -262,7 +266,7 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not state:
         window = await _open_next_vote(db, 1, duration_ms)
         try:
-            _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+            await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
         except Exception as exc:
             logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
@@ -278,7 +282,7 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
         window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
         try:
-            _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+            await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
         except Exception as exc:
             logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
@@ -287,7 +291,7 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     window = await _open_next_vote(db, int(state.get("version", 0)) + 1, duration_ms)
     try:
-        _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms)
+        await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
     except Exception as exc:
         logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
