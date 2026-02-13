@@ -1,12 +1,13 @@
 # Voting System (Vote API + Tally Worker + Orchestrator + Playback Orchestrator)
 
-This repo includes five FastAPI services that implement an anonymous voting system on Cloud Run:
+This repo includes five FastAPI services and one Cloud Function that implement an anonymous voting system on Cloud Run:
 
 - **vote-api**: issues anonymous session cookies, accepts votes, dedupes, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **vote-orchestrator**: rotates vote windows in Firestore and dispatches the music worker
 - **playback-orchestrator**: advances station playback and triggers vote-orchestrator ticks
 - **vote-stream**: streams current poll state/tallies over SSE from Redis
+- **modal-dispatcher** (Cloud Function): dispatches the Modal worker on vote close when listeners are active
 
 ## Firestore schema
 
@@ -104,13 +105,31 @@ Queues:
 ### vote-orchestrator
 - `POST /open` creates/rotates votes (requires `endsAt` in payload)
 - `POST /close` closes the current vote idempotently (requires `voteId` in payload)
-- On close, persists `voteWindows` and dispatches the Modal worker if listeners exist
+- Publishes Pub/Sub vote events on open/close
+- On close, persists `voteWindows`
 
 ### playback-orchestrator
 - `POST /tick` advances station playback, marks songs played, enqueues a vote-orchestrator open request, and schedules the next playback tick
 
 ### vote-stream
 - `GET /stream` streams SSE updates (full snapshot on connect/open/close, diffs between)
+
+### modal-dispatcher
+- Pub/Sub triggered (CLOSE events) to dispatch the Modal worker when listeners are active
+
+## Pub/Sub
+
+Topic:
+- `vote-events` (published by vote-orchestrator)
+
+Message payload:
+```json
+{
+  "event": "OPEN | CLOSE",
+  "voteId": "string",
+  "winnerOption": "string (CLOSE only)"
+}
+```
 
 ## Required environment variables
 

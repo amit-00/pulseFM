@@ -12,9 +12,21 @@ resource "google_project_iam_member" "tally_function_firestore" {
   member  = "serviceAccount:${google_service_account.tally_function.email}"
 }
 
+resource "google_project_iam_member" "modal_dispatcher_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
+}
+
 resource "google_project_iam_member" "vote_orchestrator_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+}
+
+resource "google_project_iam_member" "vote_orchestrator_pubsub" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
 }
 
@@ -128,6 +140,12 @@ resource "google_service_account_iam_member" "terraform_act_as_vote_api" {
 
 resource "google_service_account_iam_member" "terraform_act_as_tally_function" {
   service_account_id = google_service_account.tally_function.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_modal_dispatcher" {
+  service_account_id = google_service_account.modal_dispatcher.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }

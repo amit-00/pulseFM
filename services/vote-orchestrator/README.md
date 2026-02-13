@@ -1,6 +1,6 @@
 # Vote Orchestrator
 
-FastAPI service to open/close votes and compute winners from Redis tallies.
+FastAPI service to open/close votes, compute winners from Redis tallies, and publish vote events.
 
 ## Endpoints
 - `POST /open` -> open a new vote (requires JSON body with `endsAt`)
@@ -11,6 +11,7 @@ FastAPI service to open/close votes and compute winners from Redis tallies.
 - `PROJECT_ID`
 - `VOTE_OPTIONS` (comma-separated) or `pulsefm-descriptors` (default)
 - `VOTE_ORCHESTRATOR_URL` (base service URL)
+- `VOTE_EVENTS_TOPIC` (default: `vote-events`)
 
 ## Optional env vars
 - `VOTE_STATE_COLLECTION` (default: `voteState`)

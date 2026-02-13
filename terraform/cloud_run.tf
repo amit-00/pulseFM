@@ -89,6 +89,10 @@ resource "google_cloud_run_v2_service" "vote_orchestrator" {
         value = "voteWindows"
       }
       env {
+        name  = "VOTE_EVENTS_TOPIC"
+        value = google_pubsub_topic.vote_events.name
+      }
+      env {
         name  = "VOTE_ORCHESTRATOR_QUEUE"
         value = google_cloud_tasks_queue.vote_orchestrator_queue.name
       }

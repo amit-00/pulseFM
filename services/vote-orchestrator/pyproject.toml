@@ -10,11 +10,11 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.104.1",
   "uvicorn[standard]==0.24.0",
-  "modal",
   "google-cloud-firestore",
   "pulsefm-descriptors",
   "pulsefm-tasks",
   "pulsefm-redis",
+  "pulsefm-pubsub",
 ]
 
 [tool.setuptools.packages.find]

@@ -13,6 +13,7 @@ locals {
     "redis.googleapis.com",
     "vpcaccess.googleapis.com",
     "compute.googleapis.com",
+    "pubsub.googleapis.com",
   ]
 }
 

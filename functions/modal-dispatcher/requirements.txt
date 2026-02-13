@@ -1,0 +1,5 @@
+functions-framework==3.5.0
+google-cloud-firestore==2.14.0
+modal
+./packages/pulsefm-descriptors
+./packages/pulsefm-pubsub

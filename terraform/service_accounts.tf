@@ -8,6 +8,11 @@ resource "google_service_account" "tally_function" {
   display_name = "tally-function"
 }
 
+resource "google_service_account" "modal_dispatcher" {
+  account_id   = "modal-dispatcher"
+  display_name = "modal-dispatcher"
+}
+
 resource "google_service_account" "vote_orchestrator" {
   account_id   = "vote-orchestrator"
   display_name = "vote-orchestrator"

@@ -4,7 +4,8 @@
     "packages/pulsefm-models",
     "packages/pulsefm-auth",
     "packages/pulsefm-tasks",
-    "packages/pulsefm-redis"
+    "packages/pulsefm-redis",
+    "packages/pulsefm-pubsub"
   ],
   "venvPath": ".",
   "venv": ".venv"

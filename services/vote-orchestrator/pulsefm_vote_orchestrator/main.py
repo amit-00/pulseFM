@@ -5,11 +5,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 import uuid
 
-import modal
 from fastapi import FastAPI, HTTPException, status
 from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
-from pulsefm_descriptors.data import DESCRIPTORS, get_descriptor_keys
+from pulsefm_descriptors.data import get_descriptor_keys
 from pulsefm_tasks.client import enqueue_json_task_with_delay
 from pulsefm_redis.client import (
     close_poll_state,
@@ -17,6 +16,7 @@ from pulsefm_redis.client import (
     get_redis_client,
     init_poll_open_atomic,
 )
+from pulsefm_pubsub.client import publish_json
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,12 +36,13 @@ def get_firestore_client() -> AsyncClient:
 
 VOTE_STATE_COLLECTION = os.getenv("VOTE_STATE_COLLECTION", "voteState")
 VOTE_WINDOWS_COLLECTION = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
-HEARTBEAT_COLLECTION = os.getenv("HEARTBEAT_COLLECTION", "heartbeat")
 VOTE_ORCHESTRATOR_QUEUE = os.getenv("VOTE_ORCHESTRATOR_QUEUE", "vote-orchestrator-queue")
 VOTE_ORCHESTRATOR_URL = os.getenv("VOTE_ORCHESTRATOR_URL", "")
 WINDOW_SECONDS = int(os.getenv("WINDOW_SECONDS", "300"))
 OPTIONS_PER_WINDOW = int(os.getenv("OPTIONS_PER_WINDOW", "4"))
 VOTE_OPTIONS = [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()]
+PROJECT_ID = os.getenv("PROJECT_ID", "")
+VOTE_EVENTS_TOPIC = os.getenv("VOTE_EVENTS_TOPIC", "vote-events")
 
 
 def _utc_now() -> datetime:
@@ -68,6 +69,13 @@ def _build_vote(vote_id: str, start_at: datetime, duration_ms: int, options: lis
     }
 
 
+def _publish_vote_event(event: str, vote_id: str, winner_option: str | None = None) -> None:
+    payload: Dict[str, Any] = {"event": event, "voteId": vote_id}
+    if winner_option is not None:
+        payload["winnerOption"] = winner_option
+    publish_json(PROJECT_ID, VOTE_EVENTS_TOPIC, payload)
+
+
 def _get_window_options() -> list[str]:
     if VOTE_OPTIONS:
         return VOTE_OPTIONS
@@ -75,41 +83,6 @@ def _get_window_options() -> list[str]:
     if len(options) < OPTIONS_PER_WINDOW:
         raise ValueError("Not enough descriptor options to sample window choices")
     return random.sample(options, OPTIONS_PER_WINDOW)
-
-
-async def _get_active_listeners(db: AsyncClient) -> int:
-    """Read the heartbeat/main doc and return the active_listeners count."""
-    doc = await db.collection(HEARTBEAT_COLLECTION).document("main").get()
-    if not doc.exists:
-        return 0
-    data = doc.to_dict()
-    return data.get("active_listeners", 0) if data else 0
-
-
-async def _dispatch_modal_worker(vote_id: str, winner_option: str) -> None:
-    """Dispatch the Modal worker to generate music for the winning option."""
-    descriptor = DESCRIPTORS.get(winner_option)
-    if not descriptor:
-        logger.warning("No descriptor found for winner option: %s", winner_option)
-        return
-
-    genre = descriptor["genre"]
-    mood = descriptor["mood"]
-    energy = descriptor["energy"]
-
-    logger.info(
-        "Dispatching Modal worker: vote_id=%s, winner=%s, genre=%s, mood=%s, energy=%s",
-        vote_id, winner_option, genre, mood, energy
-    )
-
-    MusicGenerator = modal.Cls.from_name("pulsefm-worker", "MusicGenerator")
-    generator = MusicGenerator()
-    await generator.generate.spawn.aio(
-        genre=genre,
-        mood=mood,
-        energy=energy,
-        vote_id=vote_id
-    )
 
 
 def _pick_winner(tallies: Dict[str, Any]) -> str | None:
@@ -146,15 +119,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
     logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
-
-    # Check active listeners and dispatch Modal worker if needed
-    if winner_option and vote_id:
-        active_listeners = await _get_active_listeners(db)
-        if active_listeners >= 1:
-            logger.info("Active listeners: %d, dispatching Modal worker", active_listeners)
-            await _dispatch_modal_worker(vote_id, winner_option)
-        else:
-            logger.info("No active listeners, skipping Modal worker dispatch")
+    _publish_vote_event("CLOSE", vote_id, winner_option)
 
     return window_doc
 
@@ -207,6 +172,7 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
+    _publish_vote_event("OPEN", vote_id)
 
     return window_doc
 
