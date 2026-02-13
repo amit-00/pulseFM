@@ -70,6 +70,67 @@ async def init_poll_voted_set(client: redis.Redis, vote_id: str, ttl_seconds: in
     await pipeline.execute()
 
 
+POLL_OPEN_LUA = """
+local current_key = KEYS[1]
+local state_key = KEYS[2]
+local tally_key = KEYS[3]
+local voted_key = KEYS[4]
+
+local vote_id = ARGV[1]
+local current_ttl = tonumber(ARGV[2])
+local state_ttl = tonumber(ARGV[3])
+local status = ARGV[4]
+local opens_at = ARGV[5]
+local closes_at = ARGV[6]
+
+redis.call("SET", current_key, vote_id, "EX", current_ttl)
+redis.call("HSET", state_key, "status", status, "opensAt", opens_at, "closesAt", closes_at)
+redis.call("EXPIRE", state_key, state_ttl)
+
+for i = 7, #ARGV, 2 do
+  redis.call("HSET", tally_key, ARGV[i], ARGV[i + 1])
+end
+redis.call("EXPIRE", tally_key, state_ttl)
+
+redis.call("DEL", voted_key)
+redis.call("SADD", voted_key, "__init__")
+redis.call("SREM", voted_key, "__init__")
+redis.call("EXPIRE", voted_key, state_ttl)
+
+return "ok"
+"""
+
+
+async def init_poll_open_atomic(
+    client: redis.Redis,
+    vote_id: str,
+    current_ttl_seconds: int,
+    state_ttl_seconds: int,
+    status: str,
+    opens_at_ms: int,
+    closes_at_ms: int,
+    options: list[str],
+) -> None:
+    tally_args: list[str] = []
+    for option in options:
+        tally_args.extend([option, "0"])
+    await client.eval(
+        POLL_OPEN_LUA,
+        4,
+        current_poll_key(),
+        poll_state_key(vote_id),
+        poll_tally_key(vote_id),
+        poll_voted_key(vote_id),
+        vote_id,
+        max(1, int(current_ttl_seconds)),
+        max(1, int(state_ttl_seconds)),
+        status,
+        str(int(opens_at_ms)),
+        str(int(closes_at_ms)),
+        *tally_args,
+    )  # type: ignore[misc]
+
+
 async def add_voted_session(client: redis.Redis, vote_id: str, session_id: str, ttl_seconds: int | None = None) -> bool:
     key = poll_voted_key(vote_id)
     added = (await client.sadd(key, session_id)) == 1  # type: ignore[misc]

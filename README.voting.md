@@ -1,11 +1,12 @@
 # Voting System (Vote API + Tally Worker + Orchestrator + Playback Orchestrator)
 
-This repo includes four FastAPI services that implement an anonymous voting system on Cloud Run:
+This repo includes five FastAPI services that implement an anonymous voting system on Cloud Run:
 
 - **vote-api**: issues anonymous session cookies, accepts votes, dedupes, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **vote-orchestrator**: rotates vote windows in Firestore and dispatches the music worker
 - **playback-orchestrator**: advances station playback and triggers vote-orchestrator ticks
+- **vote-stream**: streams current poll state/tallies over SSE from Redis
 
 ## Firestore schema
 
@@ -108,6 +109,9 @@ Queues:
 ### playback-orchestrator
 - `POST /tick` advances station playback, marks songs played, enqueues a vote-orchestrator open request, and schedules the next playback tick
 
+### vote-stream
+- `GET /stream` streams SSE updates (full snapshot on connect/open/close, diffs between)
+
 ## Required environment variables
 
 ### vote-api
@@ -126,6 +130,9 @@ Queues:
 - `PROJECT_ID`
 - `LOCATION`
 - `VOTE_ORCHESTRATOR_URL`
+
+### vote-stream
+- `SESSION_JWT_SECRET`
 
 ## Cloud Run deployment notes
 

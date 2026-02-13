@@ -15,10 +15,7 @@ from pulsefm_redis.client import (
     close_poll_state,
     get_poll_tallies,
     get_redis_client,
-    init_poll_tally,
-    init_poll_voted_set,
-    set_current_poll,
-    set_poll_state,
+    init_poll_open_atomic,
 )
 
 logging.basicConfig(
@@ -54,17 +51,6 @@ def _utc_now() -> datetime:
 async def _get_current_state(db: AsyncClient) -> Dict[str, Any] | None:
     doc = await db.collection(VOTE_STATE_COLLECTION).document("current").get()
     return doc.to_dict() if doc.exists else None
-
-
-def _parse_timestamp(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-    if isinstance(value, str):
-        normalized = value.replace("Z", "+00:00")
-        return datetime.fromisoformat(normalized).astimezone(timezone.utc)
-    raise ValueError("Invalid timestamp")
 
 
 def _build_vote(vote_id: str, start_at: datetime, duration_ms: int, options: list[str], version: int) -> Dict[str, Any]:
@@ -179,17 +165,16 @@ async def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: dateti
     current_ttl_seconds = max(1, int((duration_ms * 2) / 1000))
     state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
 
-    await set_current_poll(client, vote_id, current_ttl_seconds)
-    await set_poll_state(
+    await init_poll_open_atomic(
         client,
         vote_id,
+        current_ttl_seconds,
+        state_ttl_seconds,
         "open",
         int(start_at.timestamp() * 1000),
         int(end_at.timestamp() * 1000),
-        state_ttl_seconds,
+        options,
     )
-    await init_poll_tally(client, vote_id, options, state_ttl_seconds)
-    await init_poll_voted_set(client, vote_id, state_ttl_seconds)
 
 
 async def _update_redis_on_close(vote_id: str) -> None:
@@ -217,8 +202,8 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
     vote_id = str(uuid.uuid4())
     start_at = _utc_now()
     window_options = _get_window_options()
-
     window_doc = _build_vote(vote_id, start_at, duration_ms, window_options, version)
+
     await db.collection(VOTE_STATE_COLLECTION).document("current").set(window_doc)
     await db.collection(VOTE_WINDOWS_COLLECTION).document(vote_id).set(window_doc)
     logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
@@ -232,6 +217,7 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not vote_id:
         logger.warning("Missing voteId on close")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
+
     db = get_firestore_client()
     state = await _get_current_state(db)
     if not state:
@@ -243,6 +229,7 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     if state.get("status") != "OPEN":
         logger.info("Already closed", extra={"voteId": state.get("voteId")})
         return {"status": "already_closed", "voteId": state.get("voteId")}
+
     try:
         window = await _close_vote(db, state)
         await _update_redis_on_close(window["voteId"])
@@ -251,6 +238,7 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception("Failed to update Redis on close", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
     return {"status": "closed", "voteId": window.get("voteId")}
 
 
@@ -272,12 +260,9 @@ async def open_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if not state:
         window = await _open_next_vote(db, 1, duration_ms)
-        try:
-            await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
-        except Exception as exc:
-            logger.exception("Failed to update Redis on open", extra={"voteId": window["voteId"]})
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+        await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
         _schedule_close(window["voteId"], window["endAt"])
+
         return {"status": "opened", "voteId": window["voteId"]}
 
     poll_status = state.get("status")

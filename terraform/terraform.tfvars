@@ -7,6 +7,7 @@ vote_api_image              = "northamerica-northeast1-docker.pkg.dev/pulsefm-48
 vote_orchestrator_image     = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-orchestrator:bootstrap"
 encoder_image               = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:bootstrap"
 playback_orchestrator_image = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-orchestrator:bootstrap"
+vote_stream_image           = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-stream:bootstrap"
 
 # Secrets / config
 session_jwt_secret = "KZfr62k0f7xUrl49M3sDAaMe8cCf+UCc4A62sz+qzUo="

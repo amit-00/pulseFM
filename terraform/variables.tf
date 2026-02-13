@@ -33,6 +33,11 @@ variable "playback_orchestrator_image" {
   description = "Container image for playback-orchestrator (tag or digest)"
 }
 
+variable "vote_stream_image" {
+  type        = string
+  description = "Container image for vote-stream (tag or digest)"
+}
+
 variable "session_jwt_secret" {
   type        = string
   description = "HMAC secret for session JWTs"

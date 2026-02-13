@@ -244,8 +244,48 @@ resource "google_cloud_run_v2_service" "playback_orchestrator" {
   }
 }
 
+resource "google_cloud_run_v2_service" "vote_stream" {
+  name     = "vote-stream"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_ALL"
+
+  template {
+    service_account = google_service_account.vote_stream.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
+    containers {
+      image = var.vote_stream_image
+      env {
+        name  = "SESSION_JWT_SECRET"
+        value = var.session_jwt_secret
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
+}
+
 resource "google_cloud_run_v2_service_iam_member" "vote_api_public" {
   name     = google_cloud_run_v2_service.vote_api.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "vote_stream_public" {
+  name     = google_cloud_run_v2_service.vote_stream.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"

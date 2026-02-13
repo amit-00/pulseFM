@@ -23,6 +23,11 @@ resource "google_service_account" "playback_orchestrator" {
   display_name = "playback-orchestrator"
 }
 
+resource "google_service_account" "vote_stream" {
+  account_id   = "vote-stream"
+  display_name = "vote-stream"
+}
+
 resource "google_service_account" "eventarc" {
   account_id   = "eventarc"
   display_name = "eventarc"

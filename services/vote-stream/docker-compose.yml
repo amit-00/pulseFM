@@ -1,0 +1,21 @@
+services:
+  vote-stream:
+    build:
+      context: ../..
+      dockerfile: services/vote-stream/Dockerfile
+    container_name: pulsefm-vote-stream
+    ports:
+      - "8092:8080"
+    environment:
+      - PORT=8080
+      - SESSION_JWT_SECRET=${SESSION_JWT_SECRET}
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - STREAM_INTERVAL_MS=500
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

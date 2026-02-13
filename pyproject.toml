@@ -13,3 +13,4 @@ pulsefm-vote-orchestrator = { workspace = true }
 pulsefm-descriptors = { workspace = true }
 pulsefm-tasks = { workspace = true }
 pulsefm-playback-orchestrator = { workspace = true }
+pulsefm-vote-stream = { workspace = true }

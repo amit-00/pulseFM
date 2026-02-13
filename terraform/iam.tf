@@ -48,6 +48,12 @@ resource "google_project_iam_member" "playback_orchestrator_vpc_access" {
   member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
 }
 
+resource "google_project_iam_member" "vote_stream_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.vote_stream.email}"
+}
+
 resource "google_project_iam_member" "vote_orchestrator_tasks" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"
@@ -140,6 +146,12 @@ resource "google_service_account_iam_member" "terraform_act_as_encoder" {
 
 resource "google_service_account_iam_member" "terraform_act_as_playback_orchestrator" {
   service_account_id = google_service_account.playback_orchestrator.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_vote_stream" {
+  service_account_id = google_service_account.vote_stream.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
