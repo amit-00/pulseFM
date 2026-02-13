@@ -19,6 +19,7 @@ members = [
     "pulsefm-tasks",
     "pulsefm-vote-api",
     "pulsefm-vote-orchestrator",
+    "pulsefm-vote-stream",
     "pulsefm-worker",
 ]
 
@@ -1535,6 +1536,25 @@ requires-dist = [
     { name = "pulsefm-descriptors", editable = "packages/pulsefm-descriptors" },
     { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
     { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
+]
+
+[[package]]
+name = "pulsefm-vote-stream"
+version = "0.1.0"
+source = { editable = "services/vote-stream" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "pulsefm-auth" },
+    { name = "pulsefm-redis" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = "==0.104.1" },
+    { name = "pulsefm-auth", editable = "packages/pulsefm-auth" },
+    { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
 ]
 
