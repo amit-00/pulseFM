@@ -219,6 +219,9 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
         return {"status": "ignored"}
 
     db = get_firestore_client()
+    # Drop cached snapshot first so invalidation reads the latest state.
+    _snapshot_cache.data = None
+    _snapshot_cache.expires_at_ms = 0
     snapshot = await _get_state_snapshot(db)
     poll = snapshot.get("poll", {})
     _invalidate_state(
@@ -226,7 +229,6 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
         poll.get("version"),
         "song_changed",
     )
-    _snapshot_cache.data = None
     logger.info("State invalidated on changeover", extra={"voteId": poll.get("voteId") if poll else None})
     return {"status": "ok"}
 
@@ -267,6 +269,17 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
 
         now = asyncio.get_event_loop().time()
 
+        # Handle invalidation first so no stale delta events are emitted after song changeover.
+        if _last_invalidated and _last_invalidated.get("ts", 0) > last_invalidated_at:
+            yield _format_sse("STATE_INVALIDATED", _last_invalidated)
+            last_invalidated_at = _last_invalidated.get("ts", 0)
+            snapshot = await _get_state_snapshot(db)
+            vote_id = snapshot.get("poll", {}).get("voteId")
+            version = snapshot.get("poll", {}).get("version")
+            last_tallies = {}
+            last_snapshot_at = 0.0
+            last_delta_at = 0.0
+
         if now - last_snapshot_at >= settings.tally_snapshot_interval_sec:
             tallies = await _get_tallies(redis_client, vote_id)
             last_tallies = tallies
@@ -291,13 +304,6 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
                 {"voteId": vote_id, "ts": _utc_ms(), "delta": deltas},
             )
             last_delta_at = now
-
-        if _last_invalidated and _last_invalidated.get("ts", 0) > last_invalidated_at:
-            yield _format_sse("STATE_INVALIDATED", _last_invalidated)
-            last_invalidated_at = _last_invalidated.get("ts", 0)
-            snapshot = await _get_state_snapshot(db)
-            vote_id = snapshot.get("poll", {}).get("voteId")
-            version = snapshot.get("poll", {}).get("version")
 
         if now - last_heartbeat_at >= heartbeat_sec:
             yield _format_sse("HEARTBEAT", {"voteId": vote_id, "ts": _utc_ms()})

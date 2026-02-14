@@ -330,17 +330,6 @@ async def tick() -> Dict[str, str]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
     try:
-        publish_json(
-            settings.project_id or None,
-            settings.playback_events_topic,
-            {"event": "CHANGEOVER", "durationMs": result["durationMs"]},
-        )
-    except Exception:
-        logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")
-    logger.info("Published playback changeover", extra={"durationMs": result["durationMs"]})
-
-    try:
         window = await _rotate_vote(db, int(result["durationMs"]))
     except Exception:
         logger.exception("Failed to rotate vote")
@@ -381,6 +370,17 @@ async def tick() -> Dict[str, str]:
     except Exception:
         logger.exception("Failed to update Redis playback snapshot", extra={"voteId": window.get("voteId")})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
+
+    try:
+        publish_json(
+            settings.project_id or None,
+            settings.playback_events_topic,
+            {"event": "CHANGEOVER", "durationMs": result["durationMs"]},
+        )
+    except Exception:
+        logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")
+    logger.info("Published playback changeover", extra={"durationMs": result["durationMs"]})
 
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
