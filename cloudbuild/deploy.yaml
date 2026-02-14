@@ -23,6 +23,7 @@ steps:
           -var="vote_api_image=${_VOTE_API_IMAGE}" \
           -var="encoder_image=${_ENCODER_IMAGE}" \
           -var="playback_service_image=${_PLAYBACK_SERVICE_IMAGE}" \
+          -var="playback_stream_image=${_PLAYBACK_STREAM_IMAGE}" \
           -var="window_seconds=${_WINDOW_SECONDS}" \
           -var="options_per_window=${_OPTIONS_PER_WINDOW}" \
           -var="github_owner=${_GITHUB_OWNER}" \
@@ -46,6 +47,12 @@ steps:
   - name: gcr.io/cloud-builders/docker
     id: push-playback-service
     args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}"]
+  - name: gcr.io/cloud-builders/docker
+    id: build-playback-stream
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}", "-f", "services/playback-stream/Dockerfile", "."]
+  - name: gcr.io/cloud-builders/docker
+    id: push-playback-stream
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}"]
   - name: gcr.io/cloud-builders/gcloud
     id: deploy-services
     entrypoint: /bin/sh
@@ -56,12 +63,14 @@ steps:
         gcloud run deploy vote-api --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA} --service-account vote-api@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
         gcloud run deploy encoder --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
         gcloud run deploy playback-service --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA} --service-account playback-service@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy playback-stream --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA} --service-account playback-stream@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
 substitutions:
   _REGION: northamerica-northeast1
   _ARTIFACT_REPO: pulsefm
   _VOTE_API_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:placeholder"
   _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
   _PLAYBACK_SERVICE_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:placeholder"
+  _PLAYBACK_STREAM_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:placeholder"
   _SESSION_JWT_SECRET: ""
   _WINDOW_SECONDS: "300"
   _OPTIONS_PER_WINDOW: "4"

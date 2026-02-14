@@ -1,1 +1,3 @@
 functions-framework==3.5.0
+./packages/pulsefm-redis
+./packages/pulsefm-pubsub

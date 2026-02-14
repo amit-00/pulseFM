@@ -35,6 +35,8 @@ resource "google_cloudfunctions2_function" "tally_function" {
     vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
+      PROJECT_ID = var.project_id
+      TALLY_TOPIC = google_pubsub_topic.tally_events.name
       REDIS_HOST = google_redis_instance.memorystore.host
       REDIS_PORT = tostring(google_redis_instance.memorystore.port)
     }

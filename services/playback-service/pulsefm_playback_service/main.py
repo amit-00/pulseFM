@@ -11,7 +11,6 @@ from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transact
 from pulsefm_descriptors.data import get_descriptor_keys
 from pulsefm_pubsub.client import publish_json
 from pulsefm_redis.client import (
-    close_poll_state,
     get_poll_tallies,
     get_redis_client,
     init_poll_open_atomic,
@@ -218,26 +217,26 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     return window_doc
 
 
-async def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, duration_ms: int, options: list[str]) -> None:
+async def _update_redis_on_open(
+    vote_id: str,
+    start_at: datetime,
+    end_at: datetime,
+    duration_ms: int,
+    options: list[str],
+    snapshot: Dict[str, Any],
+) -> None:
     client = get_redis_client()
-    current_ttl_seconds = max(1, int((duration_ms * 2) / 1000))
+    current_ttl_seconds = max(1, int(duration_ms / 1000))
     state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
 
     await init_poll_open_atomic(
         client,
         vote_id,
+        snapshot,
         current_ttl_seconds,
         state_ttl_seconds,
-        "open",
-        int(start_at.timestamp() * 1000),
-        int(end_at.timestamp() * 1000),
         options,
     )
-
-
-async def _update_redis_on_close(vote_id: str) -> None:
-    client = get_redis_client()
-    await close_poll_state(client, vote_id)
 
 
 async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Dict[str, Any]:
@@ -258,13 +257,11 @@ async def _rotate_vote(db: AsyncClient, duration_ms: int) -> Dict[str, Any]:
     state = await _get_current_state(db)
     if state and state.get("status") == "OPEN":
         window = await _close_vote(db, state)
-        await _update_redis_on_close(window["voteId"])
         version = int(state.get("version") or 0) + 1
     else:
         version = int(state.get("version") or 0) + 1 if state else 1
 
     window = await _open_next_vote(db, version, duration_ms)
-    await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
     return window
 
 
@@ -323,7 +320,7 @@ async def tick() -> Dict[str, str]:
             song_ref = songs_ref.document(ready_song["id"])
             transaction.update(song_ref, {"status": "played"})
 
-        return {"endsAt": ends_at, "durationMs": duration_ms, "voteId": current_vote_id}
+        return {"startAt": now, "endsAt": ends_at, "durationMs": duration_ms, "voteId": current_vote_id}
 
     transaction = db.transaction()
     try:
@@ -344,10 +341,46 @@ async def tick() -> Dict[str, str]:
     logger.info("Published playback changeover", extra={"durationMs": result["durationMs"]})
 
     try:
-        await _rotate_vote(db, int(result["durationMs"]))
+        window = await _rotate_vote(db, int(result["durationMs"]))
     except Exception:
         logger.exception("Failed to rotate vote")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rotate vote")
+
+    try:
+        current_start_at = result.get("startAt")
+        current_end_at = result.get("endsAt")
+        current_duration_ms = int(result["durationMs"])
+        current_vote_id = result.get("voteId")
+        current_start_ms = int(current_start_at.timestamp() * 1000) if isinstance(current_start_at, datetime) else None
+        current_end_ms = int(current_end_at.timestamp() * 1000) if isinstance(current_end_at, datetime) else None
+        snapshot = {
+            "currentSong": {
+                "voteId": current_vote_id,
+                "startAt": current_start_ms,
+                "endAt": current_end_ms,
+                "durationMs": current_duration_ms,
+            },
+            "nextSong": {
+                "voteId": ready_song.get("id"),
+                "durationMs": ready_song.get("duration"),
+            },
+            "poll": {
+                "voteId": window.get("voteId"),
+                "options": window.get("options"),
+                "version": window.get("version"),
+            },
+        }
+        await _update_redis_on_open(
+            window["voteId"],
+            window["startAt"],
+            window["endAt"],
+            current_duration_ms,
+            window["options"],
+            snapshot,
+        )
+    except Exception:
+        logger.exception("Failed to update Redis playback snapshot", extra={"voteId": window.get("voteId")})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
 
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")

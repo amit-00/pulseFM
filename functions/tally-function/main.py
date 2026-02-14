@@ -1,9 +1,11 @@
 import logging
+import os
 from typing import Any, Dict
 
 import functions_framework
 
-from pulsefm_redis.client import get_redis_client, poll_state_key, poll_tally_key, record_vote_atomic
+from pulsefm_pubsub.client import publish_json
+from pulsefm_redis.client import get_playback_current_snapshot, get_redis_client, poll_tally_key, record_vote_atomic
 
 logging.basicConfig(
     level=logging.INFO,
@@ -12,6 +14,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 redis_client = get_redis_client()
+TALLY_TOPIC = os.getenv("TALLY_TOPIC", "tally")
+PROJECT_ID = os.getenv("PROJECT_ID", "")
 
 
 def _success(status: str, extra: Dict[str, Any] | None = None, code: int = 200):
@@ -37,9 +41,10 @@ async def tally_function(request):
         return _success("missing_fields")
 
     try:
-        status_value = await redis_client.hget(poll_state_key(vote_id), "status") # type: ignore[misc]
-        if status_value != "open":
-            logger.info("Vote not open", extra={"voteId": vote_id, "status": status_value})
+        snapshot = await get_playback_current_snapshot(redis_client)
+        current_vote_id = (snapshot or {}).get("poll", {}).get("voteId")
+        if current_vote_id != vote_id:
+            logger.info("Vote not current", extra={"voteId": vote_id, "currentVoteId": current_vote_id})
             return _success("vote_not_open")
 
         option_exists = await redis_client.hexists(poll_tally_key(vote_id), option) # type: ignore[misc]
@@ -58,6 +63,10 @@ async def tally_function(request):
 
     if added:
         logger.info("Tally applied", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
+        try:
+            publish_json(PROJECT_ID, TALLY_TOPIC, {"voteId": vote_id})
+        except Exception:
+            logger.exception("Failed to publish tally event", extra={"voteId": vote_id})
     else:
         logger.info("Tally not applied", extra={"voteId": vote_id, "sessionId": session_id})
     return _success("ok")

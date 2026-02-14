@@ -5,3 +5,7 @@ resource "google_pubsub_topic" "vote_events" {
 resource "google_pubsub_topic" "playback_events" {
   name = "playback"
 }
+
+resource "google_pubsub_topic" "tally_events" {
+  name = "tally"
+}

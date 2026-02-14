@@ -6,7 +6,7 @@ artifact_repo = "pulsefm"
 vote_api_image              = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-api:bootstrap"
 encoder_image               = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:bootstrap"
 playback_service_image      = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:bootstrap"
-vote_stream_image           = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-stream:bootstrap"
+playback_stream_image       = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-stream:bootstrap"
 
 # Secrets / config
 session_jwt_secret = "KZfr62k0f7xUrl49M3sDAaMe8cCf+UCc4A62sz+qzUo="

@@ -1,6 +1,6 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, playback-service, encoder, vote-stream), Cloud Functions (tally-function, modal-dispatcher), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream), Cloud Functions (tally-function, modal-dispatcher), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`
@@ -8,7 +8,7 @@ This directory provisions Cloud Run services (vote-api, playback-service, encode
 
 ## Inputs (required)
 - `session_jwt_secret`
-- `vote_api_image`, `playback_service_image`, `encoder_image`
+- `vote_api_image`, `playback_service_image`, `playback_stream_image`, `encoder_image`
 - `github_owner`, `github_repo`
 
 ## Usage
@@ -20,6 +20,7 @@ terraform apply \
   -var="vote_api_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-api:placeholder" \
   -var="encoder_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:placeholder" \
   -var="playback_service_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:placeholder" \
+  -var="playback_stream_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-stream:placeholder" \
   -var="github_owner=<owner>" \
   -var="github_repo=<repo>"
 ```

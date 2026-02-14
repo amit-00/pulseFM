@@ -28,9 +28,9 @@ variable "playback_service_image" {
   description = "Container image for playback-service (tag or digest)"
 }
 
-variable "vote_stream_image" {
+variable "playback_stream_image" {
   type        = string
-  description = "Container image for vote-stream (tag or digest)"
+  description = "Container image for playback-stream (tag or digest)"
 }
 
 variable "session_jwt_secret" {

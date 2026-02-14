@@ -23,9 +23,9 @@ resource "google_service_account" "encoder" {
   display_name = "encoder"
 }
 
-resource "google_service_account" "vote_stream" {
-  account_id   = "vote-stream"
-  display_name = "vote-stream"
+resource "google_service_account" "playback_stream" {
+  account_id   = "playback-stream"
+  display_name = "playback-stream"
 }
 
 resource "google_service_account" "eventarc" {

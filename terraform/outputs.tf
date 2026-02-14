@@ -14,6 +14,10 @@ output "playback_service_url" {
   value = google_cloud_run_v2_service.playback_service.uri
 }
 
+output "playback_stream_url" {
+  value = google_cloud_run_v2_service.playback_stream.uri
+}
+
 output "tally_queue" {
   value = google_cloud_tasks_queue.tally_queue.name
 }

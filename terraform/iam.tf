@@ -12,10 +12,22 @@ resource "google_project_iam_member" "tally_function_firestore" {
   member  = "serviceAccount:${google_service_account.tally_function.email}"
 }
 
+resource "google_project_iam_member" "tally_function_pubsub" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.tally_function.email}"
+}
+
 resource "google_project_iam_member" "modal_dispatcher_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
   member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
+}
+
+resource "google_project_iam_member" "playback_stream_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.playback_stream.email}"
 }
 
 resource "google_project_iam_member" "playback_service_firestore" {
@@ -60,10 +72,10 @@ resource "google_project_iam_member" "playback_service_vpc_access" {
   member  = "serviceAccount:${google_service_account.playback_service.email}"
 }
 
-resource "google_project_iam_member" "vote_stream_vpc_access" {
+resource "google_project_iam_member" "playback_stream_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.vote_stream.email}"
+  member  = "serviceAccount:${google_service_account.playback_stream.email}"
 }
 
 resource "google_project_iam_member" "encoder_vpc_access" {
@@ -150,8 +162,8 @@ resource "google_service_account_iam_member" "terraform_act_as_playback_service"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_service_account_iam_member" "terraform_act_as_vote_stream" {
-  service_account_id = google_service_account.vote_stream.name
+resource "google_service_account_iam_member" "terraform_act_as_playback_stream" {
+  service_account_id = google_service_account.playback_stream.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }

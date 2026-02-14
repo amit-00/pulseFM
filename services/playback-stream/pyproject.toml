@@ -3,17 +3,19 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pulsefm-vote-stream"
+name = "pulsefm-playback-stream"
 version = "0.1.0"
-description = "PulseFM vote stream service."
+description = "PulseFM playback stream service."
 requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.104.1",
   "uvicorn[standard]==0.24.0",
   "pulsefm-auth",
   "pulsefm-redis",
+  "pulsefm-pubsub",
+  "google-cloud-firestore",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pulsefm_vote_stream*"]
+include = ["pulsefm_playback_stream*"]

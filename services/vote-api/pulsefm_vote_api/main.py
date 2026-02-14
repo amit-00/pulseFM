@@ -8,7 +8,14 @@ from google.cloud.storage import Client as StorageClient
 
 from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
-from pulsefm_redis.client import fixed_window_allow, get_redis_client, has_voted_session, poll_tally_key, token_bucket_allow
+from pulsefm_redis.client import (
+    fixed_window_allow,
+    get_playback_current_snapshot,
+    get_redis_client,
+    has_voted_session,
+    poll_tally_key,
+    token_bucket_allow,
+)
 
 from pulsefm_vote_api.config import settings
 
@@ -190,9 +197,13 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
 
     try:
         redis_client = get_redis_client()
-        current_vote = await redis_client.get("pulsefm:poll:current")
+        snapshot = await get_playback_current_snapshot(redis_client)
+        if not snapshot:
+            logger.warning("No playback snapshot in redis")
+            raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
+        current_vote = (snapshot.get("poll") or {}).get("voteId")
         if not current_vote:
-            logger.warning("No current poll in redis")
+            logger.warning("No current poll in playback snapshot")
             raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
         if current_vote != vote_id:
             logger.info("VoteId mismatch", extra={"requested": vote_id, "current": current_vote})

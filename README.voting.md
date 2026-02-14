@@ -1,11 +1,11 @@
-# Voting System (Vote API + Tally Worker + Orchestrator + Playback Orchestrator)
+# Voting System (Vote API + Tally Worker + Playback Service)
 
 This repo includes four FastAPI services and one Cloud Function that implement an anonymous voting system on Cloud Run:
 
 - **vote-api**: issues anonymous session cookies, accepts votes, dedupes, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **playback-service**: advances station playback, closes/open votes, and publishes vote events
-- **vote-stream**: streams current poll state/tallies over SSE from Redis
+- **playback-stream**: streams system state and tally updates over SSE
 - **modal-dispatcher** (Cloud Function): dispatches the Modal worker on vote close when listeners are active
 
 ## Firestore schema
@@ -45,7 +45,7 @@ History document per window:
 
 ### Redis keys (canonical tally + dedupe)
 
-- `pulsefm:poll:current` -> current `voteId`
+- `pulsefm:playback:current` -> JSON snapshot of current song + next song + poll
 - `pulsefm:poll:{voteId}:state` -> HASH: `status`, `opensAt` (epoch ms), `closesAt` (epoch ms)
 - `pulsefm:poll:{voteId}:tally` -> HASH: `option` => count
 - `pulsefm:poll:{voteId}:voted` -> SET of sessionIds
@@ -103,8 +103,9 @@ Queues:
 ### playback-service
 - `POST /tick` advances station playback, closes/open votes, publishes vote events, and schedules the next playback tick
 
-### vote-stream
-- `GET /stream` streams SSE updates (full snapshot on connect/open/close, diffs between)
+### playback-stream
+- `GET /state` returns the current state snapshot
+- `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, STATE_INVALIDATED, HEARTBEAT)
 
 ### modal-dispatcher
 - Pub/Sub triggered (CLOSE events) to dispatch the Modal worker when listeners are active
@@ -114,9 +115,11 @@ Queues:
 Topics:
 - `vote-events` (published by playback-service)
 - `playback` (published by playback-service)
+- `tally` (published by tally-function)
 
 Consumers:
 - `modal-dispatcher` (CLOSE events from `vote-events`)
+- `playback-stream` (tally and playback events)
 
 Message payload:
 ```json
@@ -135,6 +138,13 @@ Playback payload:
 }
 ```
 
+Tally payload:
+```json
+{
+  "voteId": "string"
+}
+```
+
 ## Required environment variables
 
 ### vote-api
@@ -150,7 +160,7 @@ Playback payload:
 - `PROJECT_ID`
 - `LOCATION`
 
-### vote-stream
+### playback-stream
 - `SESSION_JWT_SECRET`
 
 ## Cloud Run deployment notes

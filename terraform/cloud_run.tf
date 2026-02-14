@@ -195,22 +195,30 @@ resource "google_cloud_run_v2_service" "playback_service" {
   }
 }
 
-resource "google_cloud_run_v2_service" "vote_stream" {
-  name     = "vote-stream"
+resource "google_cloud_run_v2_service" "playback_stream" {
+  name     = "playback-stream"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    service_account = google_service_account.vote_stream.email
+    service_account = google_service_account.playback_stream.email
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
     }
     containers {
-      image = var.vote_stream_image
+      image = var.playback_stream_image
       env {
         name  = "SESSION_JWT_SECRET"
         value = var.session_jwt_secret
+      }
+      env {
+        name  = "STATIONS_COLLECTION"
+        value = "stations"
+      }
+      env {
+        name  = "VOTE_STATE_COLLECTION"
+        value = "voteState"
       }
       env {
         name  = "REDIS_HOST"
@@ -235,8 +243,8 @@ resource "google_cloud_run_v2_service_iam_member" "vote_api_public" {
   member   = "allUsers"
 }
 
-resource "google_cloud_run_v2_service_iam_member" "vote_stream_public" {
-  name     = google_cloud_run_v2_service.vote_stream.name
+resource "google_cloud_run_v2_service_iam_member" "playback_stream_public" {
+  name     = google_cloud_run_v2_service.playback_stream.name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"
