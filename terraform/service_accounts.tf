@@ -13,19 +13,14 @@ resource "google_service_account" "modal_dispatcher" {
   display_name = "modal-dispatcher"
 }
 
-resource "google_service_account" "vote_orchestrator" {
-  account_id   = "vote-orchestrator"
-  display_name = "vote-orchestrator"
+resource "google_service_account" "playback_service" {
+  account_id   = "playback-service"
+  display_name = "playback-service"
 }
 
 resource "google_service_account" "encoder" {
   account_id   = "encoder"
   display_name = "encoder"
-}
-
-resource "google_service_account" "playback_orchestrator" {
-  account_id   = "playback-orchestrator"
-  display_name = "playback-orchestrator"
 }
 
 resource "google_service_account" "vote_stream" {

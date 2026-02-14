@@ -21,9 +21,8 @@ steps:
           -var="artifact_repo=${_ARTIFACT_REPO}" \
           -var="session_jwt_secret=${_SESSION_JWT_SECRET}" \
           -var="vote_api_image=${_VOTE_API_IMAGE}" \
-          -var="vote_orchestrator_image=${_VOTE_ORCHESTRATOR_IMAGE}" \
           -var="encoder_image=${_ENCODER_IMAGE}" \
-          -var="playback_orchestrator_image=${_PLAYBACK_ORCHESTRATOR_IMAGE}" \
+          -var="playback_service_image=${_PLAYBACK_SERVICE_IMAGE}" \
           -var="window_seconds=${_WINDOW_SECONDS}" \
           -var="options_per_window=${_OPTIONS_PER_WINDOW}" \
           -var="github_owner=${_GITHUB_OWNER}" \
@@ -36,23 +35,17 @@ steps:
     id: push-vote-api
     args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}"]
   - name: gcr.io/cloud-builders/docker
-    id: build-vote-orchestrator
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA}", "-f", "services/vote-orchestrator/Dockerfile", "."]
-  - name: gcr.io/cloud-builders/docker
-    id: push-vote-orchestrator
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA}"]
-  - name: gcr.io/cloud-builders/docker
     id: build-encoder
     args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}", "-f", "services/encoder/Dockerfile", "."]
   - name: gcr.io/cloud-builders/docker
     id: push-encoder
     args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}"]
   - name: gcr.io/cloud-builders/docker
-    id: build-playback-orchestrator
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-orchestrator:${SHORT_SHA}", "-f", "services/playback-orchestrator/Dockerfile", "."]
+    id: build-playback-service
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}", "-f", "services/playback-service/Dockerfile", "."]
   - name: gcr.io/cloud-builders/docker
-    id: push-playback-orchestrator
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-orchestrator:${SHORT_SHA}"]
+    id: push-playback-service
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}"]
   - name: gcr.io/cloud-builders/gcloud
     id: deploy-services
     entrypoint: /bin/sh
@@ -61,16 +54,14 @@ steps:
       - |
         set -e
         gcloud run deploy vote-api --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA} --service-account vote-api@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
-        gcloud run deploy vote-orchestrator --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:${SHORT_SHA} --service-account vote-orchestrator@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
         gcloud run deploy encoder --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
-        gcloud run deploy playback-orchestrator --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-orchestrator:${SHORT_SHA} --service-account playback-orchestrator@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy playback-service --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA} --service-account playback-service@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
 substitutions:
   _REGION: northamerica-northeast1
   _ARTIFACT_REPO: pulsefm
   _VOTE_API_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:placeholder"
-  _VOTE_ORCHESTRATOR_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-orchestrator:placeholder"
   _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
-  _PLAYBACK_ORCHESTRATOR_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-orchestrator:placeholder"
+  _PLAYBACK_SERVICE_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:placeholder"
   _SESSION_JWT_SECRET: ""
   _WINDOW_SECONDS: "300"
   _OPTIONS_PER_WINDOW: "4"

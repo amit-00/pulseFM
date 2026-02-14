@@ -1,19 +1,21 @@
 services:
-  playback-orchestrator:
+  playback-service:
     build:
       context: ../..
-      dockerfile: services/playback-orchestrator/Dockerfile
-    container_name: pulsefm-playback-orchestrator
+      dockerfile: services/playback-service/Dockerfile
+    container_name: pulsefm-playback-service
     ports:
-      - "8093:8080"
+      - "8094:8080"
     environment:
       - PORT=8080
       - PROJECT_ID=${PROJECT_ID}
       - LOCATION=${LOCATION}
       - STATIONS_COLLECTION=stations
       - SONGS_COLLECTION=songs
-      - VOTE_ORCHESTRATOR_QUEUE=vote-orchestrator-queue
-      - VOTE_ORCHESTRATOR_URL=${VOTE_ORCHESTRATOR_URL}
+      - VOTE_STATE_COLLECTION=voteState
+      - VOTE_WINDOWS_COLLECTION=voteWindows
+      - VOTE_EVENTS_TOPIC=vote-events
+      - PLAYBACK_EVENTS_TOPIC=playback
       - PLAYBACK_QUEUE_NAME=playback-queue
       - PLAYBACK_TICK_URL=${PLAYBACK_TICK_URL}
       - TASKS_OIDC_SERVICE_ACCOUNT=${TASKS_OIDC_SERVICE_ACCOUNT}

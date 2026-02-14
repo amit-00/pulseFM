@@ -3,20 +3,20 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pulsefm-vote-orchestrator"
+name = "pulsefm-playback-service"
 version = "0.1.0"
-description = "PulseFM vote orchestrator service."
+description = "PulseFM playback service."
 requires-python = ">=3.11"
 dependencies = [
   "fastapi==0.104.1",
   "uvicorn[standard]==0.24.0",
   "google-cloud-firestore",
   "pulsefm-descriptors",
-  "pulsefm-tasks",
   "pulsefm-redis",
   "pulsefm-pubsub",
+  "pulsefm-tasks",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pulsefm_vote_orchestrator*"]
+include = ["pulsefm_playback_service*"]

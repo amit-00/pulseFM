@@ -9,8 +9,7 @@ pulsefm-auth = { workspace = true }
 pulsefm-redis = { workspace = true }
 pulsefm-pubsub = { workspace = true }
 pulsefm-vote-api = { workspace = true }
-pulsefm-vote-orchestrator = { workspace = true }
 pulsefm-descriptors = { workspace = true }
 pulsefm-tasks = { workspace = true }
-pulsefm-playback-orchestrator = { workspace = true }
 pulsefm-vote-stream = { workspace = true }
+pulsefm-playback-service = { workspace = true }

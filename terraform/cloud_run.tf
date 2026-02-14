@@ -59,75 +59,6 @@ resource "google_cloud_run_v2_service" "vote_api" {
   }
 }
 
-resource "google_cloud_run_v2_service" "vote_orchestrator" {
-  name     = "vote-orchestrator"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
-
-  template {
-    service_account = google_service_account.vote_orchestrator.email
-    vpc_access {
-      connector = google_vpc_access_connector.memorystore.id
-      egress    = "PRIVATE_RANGES_ONLY"
-    }
-    containers {
-      image = var.vote_orchestrator_image
-      env {
-        name  = "PROJECT_ID"
-        value = var.project_id
-      }
-      env {
-        name  = "LOCATION"
-        value = var.region
-      }
-      env {
-        name  = "VOTE_STATE_COLLECTION"
-        value = "voteState"
-      }
-      env {
-        name  = "VOTE_WINDOWS_COLLECTION"
-        value = "voteWindows"
-      }
-      env {
-        name  = "VOTE_EVENTS_TOPIC"
-        value = google_pubsub_topic.vote_events.name
-      }
-      env {
-        name  = "VOTE_ORCHESTRATOR_QUEUE"
-        value = google_cloud_tasks_queue.vote_orchestrator_queue.name
-      }
-      env {
-        name  = "VOTE_ORCHESTRATOR_URL"
-        value = "https://vote-orchestrator${local.cloud_run_url_suffix}"
-      }
-      env {
-        name  = "WINDOW_SECONDS"
-        value = tostring(var.window_seconds)
-      }
-      env {
-        name  = "OPTIONS_PER_WINDOW"
-        value = tostring(var.options_per_window)
-      }
-      env {
-        name  = "TASKS_OIDC_SERVICE_ACCOUNT"
-        value = google_service_account.vote_orchestrator.email
-      }
-      env {
-        name  = "REDIS_HOST"
-        value = google_redis_instance.memorystore.host
-      }
-      env {
-        name  = "REDIS_PORT"
-        value = tostring(google_redis_instance.memorystore.port)
-      }
-    }
-  }
-
-  lifecycle {
-    ignore_changes = [template[0].containers[0].image]
-  }
-}
-
 resource "google_cloud_run_v2_service" "encoder" {
   name     = "encoder"
   location = var.region
@@ -183,19 +114,19 @@ locals {
   )
 }
 
-resource "google_cloud_run_v2_service" "playback_orchestrator" {
-  name     = "playback-orchestrator"
+resource "google_cloud_run_v2_service" "playback_service" {
+  name     = "playback-service"
   location = var.region
   ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
   template {
-    service_account = google_service_account.playback_orchestrator.email
+    service_account = google_service_account.playback_service.email
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
     }
     containers {
-      image = var.playback_orchestrator_image
+      image = var.playback_service_image
       env {
         name  = "PROJECT_ID"
         value = var.project_id
@@ -213,24 +144,40 @@ resource "google_cloud_run_v2_service" "playback_orchestrator" {
         value = "songs"
       }
       env {
-        name  = "VOTE_ORCHESTRATOR_QUEUE"
-        value = google_cloud_tasks_queue.vote_orchestrator_queue.name
+        name  = "VOTE_STATE_COLLECTION"
+        value = "voteState"
       }
       env {
-        name  = "VOTE_ORCHESTRATOR_URL"
-        value = google_cloud_run_v2_service.vote_orchestrator.uri
+        name  = "VOTE_WINDOWS_COLLECTION"
+        value = "voteWindows"
+      }
+      env {
+        name  = "VOTE_EVENTS_TOPIC"
+        value = google_pubsub_topic.vote_events.name
+      }
+      env {
+        name  = "WINDOW_SECONDS"
+        value = tostring(var.window_seconds)
+      }
+      env {
+        name  = "OPTIONS_PER_WINDOW"
+        value = tostring(var.options_per_window)
       }
       env {
         name  = "PLAYBACK_QUEUE_NAME"
         value = google_cloud_tasks_queue.playback_queue.name
       }
       env {
+        name  = "PLAYBACK_EVENTS_TOPIC"
+        value = google_pubsub_topic.playback_events.name
+      }
+      env {
         name  = "PLAYBACK_TICK_URL"
-        value = "https://playback-orchestrator${local.cloud_run_url_suffix}"
+        value = "https://playback-service${local.cloud_run_url_suffix}"
       }
       env {
         name  = "TASKS_OIDC_SERVICE_ACCOUNT"
-        value = google_service_account.playback_orchestrator.email
+        value = google_service_account.playback_service.email
       }
       env {
         name  = "REDIS_HOST"
@@ -302,23 +249,9 @@ resource "google_cloud_run_v2_service_iam_member" "eventarc_invoker" {
   member   = "serviceAccount:${google_service_account.eventarc.email}"
 }
 
-resource "google_cloud_run_v2_service_iam_member" "vote_orchestrator_invoker" {
-  name     = google_cloud_run_v2_service.vote_orchestrator.name
+resource "google_cloud_run_v2_service_iam_member" "playback_service_invoker" {
+  name     = google_cloud_run_v2_service.playback_service.name
   location = var.region
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.playback_orchestrator.email}"
-}
-
-resource "google_cloud_run_v2_service_iam_member" "vote_orchestrator_self_invoker" {
-  name     = google_cloud_run_v2_service.vote_orchestrator.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.vote_orchestrator.email}"
-}
-
-resource "google_cloud_run_v2_service_iam_member" "playback_orchestrator_invoker" {
-  name     = google_cloud_run_v2_service.playback_orchestrator.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+  member   = "serviceAccount:${google_service_account.playback_service.email}"
 }

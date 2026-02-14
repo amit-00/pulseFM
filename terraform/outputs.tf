@@ -6,24 +6,16 @@ output "tally_function_url" {
   value = google_cloudfunctions2_function.tally_function.service_config[0].uri
 }
 
-output "vote_orchestrator_url" {
-  value = google_cloud_run_v2_service.vote_orchestrator.uri
-}
-
 output "encoder_url" {
   value = google_cloud_run_v2_service.encoder.uri
 }
 
-output "playback_orchestrator_url" {
-  value = google_cloud_run_v2_service.playback_orchestrator.uri
+output "playback_service_url" {
+  value = google_cloud_run_v2_service.playback_service.uri
 }
 
 output "tally_queue" {
   value = google_cloud_tasks_queue.tally_queue.name
-}
-
-output "vote_orchestrator_queue" {
-  value = google_cloud_tasks_queue.vote_orchestrator_queue.name
 }
 
 output "playback_queue" {

@@ -1,14 +1,24 @@
 import logging
+import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+import uuid
 
 from fastapi import FastAPI, HTTPException, status
-from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional
+from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
 
-from pulsefm_tasks.client import enqueue_json_task, enqueue_json_task_with_delay
+from pulsefm_descriptors.data import get_descriptor_keys
+from pulsefm_pubsub.client import publish_json
+from pulsefm_redis.client import (
+    close_poll_state,
+    get_poll_tallies,
+    get_redis_client,
+    init_poll_open_atomic,
+)
+from pulsefm_tasks.client import enqueue_json_task_with_delay
 
-from pulsefm_playback_orchestrator.config import settings
+from pulsefm_playback_service.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,10 +35,21 @@ def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
     return f"playback-{suffix}-{timestamp}"
 
 
-
 async def _get_station_state(db) -> Dict[str, Any] | None:
     doc = await db.collection(settings.stations_collection).document("main").get()
     return doc.to_dict() if doc.exists else None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_timestamp(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    raise ValueError("Invalid timestamp")
 
 
 def _remaining_delay_seconds(ends_at: Any) -> int | None:
@@ -40,6 +61,25 @@ def _remaining_delay_seconds(ends_at: Any) -> int | None:
         return None
     delta = (parsed - _utc_now()).total_seconds()
     return max(0, int(delta))
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await _ensure_playback_tick_scheduled()
+    yield
+
+
+_db: AsyncClient | None = None
+
+
+def get_firestore_client() -> AsyncClient:
+    global _db
+    if _db is None:
+        _db = AsyncClient()
+    return _db
+
+
+app = FastAPI(title="PulseFM Playback Service", version="1.0.0", lifespan=lifespan)
 
 
 async def _ensure_playback_tick_scheduled() -> None:
@@ -74,37 +114,6 @@ async def _ensure_playback_tick_scheduled() -> None:
     logger.info("Startup tick scheduled", extra={"voteId": vote_id, "delaySeconds": delay_seconds})
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await _ensure_playback_tick_scheduled()
-    yield
-
-
-_db: AsyncClient | None = None
-
-
-def get_firestore_client() -> AsyncClient:
-    global _db
-    if _db is None:
-        _db = AsyncClient()
-    return _db
-
-
-app = FastAPI(title="PulseFM Playback Orchestrator", version="1.0.0", lifespan=lifespan)
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _parse_timestamp(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-    raise ValueError("Invalid timestamp")
-
-
 async def _get_ready_song(db) -> Optional[Dict[str, Any]]:
     query = (
         db.collection(settings.songs_collection)
@@ -136,6 +145,129 @@ async def _get_stubbed_song(db) -> Dict[str, Any]:
     return {"id": vote_id, "duration": duration, "stubbed": True}
 
 
+async def _get_current_state(db: AsyncClient) -> Dict[str, Any] | None:
+    doc = await db.collection(settings.vote_state_collection).document("current").get()
+    return doc.to_dict() if doc.exists else None
+
+
+def _build_vote(vote_id: str, start_at: datetime, duration_ms: int, options: list[str], version: int) -> Dict[str, Any]:
+    end_at = start_at + timedelta(milliseconds=duration_ms)
+    return {
+        "voteId": vote_id,
+        "status": "OPEN",
+        "startAt": start_at,
+        "durationMs": duration_ms,
+        "endAt": end_at,
+        "options": options,
+        "tallies": {option: 0 for option in options},
+        "version": version,
+        "createdAt": SERVER_TIMESTAMP,
+    }
+
+
+def _get_window_options() -> list[str]:
+    if settings.vote_options:
+        return settings.vote_options
+    options = get_descriptor_keys()
+    if len(options) < settings.options_per_window:
+        raise ValueError("Not enough descriptor options to sample window choices")
+    return random.sample(options, settings.options_per_window)
+
+
+def _pick_winner(tallies: Dict[str, Any]) -> str | None:
+    if not tallies:
+        return None
+    max_votes = max(tallies.values())
+    tied = [option for option, count in tallies.items() if count == max_votes]
+    return random.choice(tied) if tied else None
+
+
+def _publish_vote_event(event: str, vote_id: str, winner_option: str | None = None) -> None:
+    payload: Dict[str, Any] = {"event": event, "voteId": vote_id}
+    if winner_option is not None:
+        payload["winnerOption"] = winner_option
+    publish_json(settings.project_id or None, settings.vote_events_topic, payload)
+
+
+async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
+    vote_id = state.get("voteId")
+    if not vote_id:
+        raise ValueError("voteId missing from voteState/current")
+    try:
+        tallies = await get_poll_tallies(get_redis_client(), vote_id)
+    except Exception as exc:
+        logger.exception("Failed to load tallies from Redis", extra={"voteId": vote_id})
+        raise exc
+    if not tallies:
+        tallies = {option: 0 for option in (state.get("options") or [])}
+    winner_option = _pick_winner(tallies)
+
+    closed_at = SERVER_TIMESTAMP
+    window_doc = {
+        **state,
+        "status": "CLOSED",
+        "winnerOption": winner_option,
+        "tallies": tallies,
+        "closedAt": closed_at,
+    }
+
+    await db.collection(settings.vote_windows_collection).document(vote_id).set(window_doc)
+    await db.collection(settings.vote_state_collection).document("current").set(window_doc)
+    logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
+    _publish_vote_event("CLOSE", vote_id, winner_option)
+    return window_doc
+
+
+async def _update_redis_on_open(vote_id: str, start_at: datetime, end_at: datetime, duration_ms: int, options: list[str]) -> None:
+    client = get_redis_client()
+    current_ttl_seconds = max(1, int((duration_ms * 2) / 1000))
+    state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
+
+    await init_poll_open_atomic(
+        client,
+        vote_id,
+        current_ttl_seconds,
+        state_ttl_seconds,
+        "open",
+        int(start_at.timestamp() * 1000),
+        int(end_at.timestamp() * 1000),
+        options,
+    )
+
+
+async def _update_redis_on_close(vote_id: str) -> None:
+    client = get_redis_client()
+    await close_poll_state(client, vote_id)
+
+
+async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Dict[str, Any]:
+    vote_id = str(uuid.uuid4())
+    start_at = _utc_now()
+    window_options = _get_window_options()
+    window_doc = _build_vote(vote_id, start_at, duration_ms, window_options, version)
+
+    await db.collection(settings.vote_state_collection).document("current").set(window_doc)
+    await db.collection(settings.vote_windows_collection).document(vote_id).set(window_doc)
+    logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
+    _publish_vote_event("OPEN", vote_id)
+
+    return window_doc
+
+
+async def _rotate_vote(db: AsyncClient, duration_ms: int) -> Dict[str, Any]:
+    state = await _get_current_state(db)
+    if state and state.get("status") == "OPEN":
+        window = await _close_vote(db, state)
+        await _update_redis_on_close(window["voteId"])
+        version = int(state.get("version") or 0) + 1
+    else:
+        version = int(state.get("version") or 0) + 1 if state else 1
+
+    window = await _open_next_vote(db, version, duration_ms)
+    await _update_redis_on_open(window["voteId"], window["startAt"], window["endAt"], duration_ms, window["options"])
+    return window
+
+
 @app.post("/tick")
 async def tick() -> Dict[str, str]:
     db = get_firestore_client()
@@ -145,14 +277,14 @@ async def tick() -> Dict[str, str]:
     except Exception:
         logger.exception("Failed to get ready song")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get ready song")
-    
+
     if ready_song is None:
         try:
             ready_song = await _get_stubbed_song(db)
         except Exception:
             logger.exception("Failed to get stubbed song")
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get stubbed song")
-            
+
     logger.info("Selected song", extra={"voteId": ready_song.get("id"), "stubbed": ready_song.get("stubbed", False)})
 
     station_ref = db.collection(settings.stations_collection).document("main")
@@ -200,17 +332,22 @@ async def tick() -> Dict[str, str]:
         logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-    if not settings.vote_orchestrator_url:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="VOTE_ORCHESTRATOR_URL is required")
+    try:
+        publish_json(
+            settings.project_id or None,
+            settings.playback_events_topic,
+            {"event": "CHANGEOVER", "durationMs": result["durationMs"]},
+        )
+    except Exception:
+        logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")
+    logger.info("Published playback changeover", extra={"durationMs": result["durationMs"]})
 
-    vote_orchestrator_url = settings.vote_orchestrator_url.rstrip("/") + "/open"
-    vote_duration_ms = max(0, result["durationMs"] - 20_000)
-    enqueue_json_task(
-        settings.vote_orchestrator_queue,
-        vote_orchestrator_url,
-        {"durationMs": vote_duration_ms},
-    )
-    logger.info("Enqueued vote open", extra={"voteDurationMs": vote_duration_ms})
+    try:
+        await _rotate_vote(db, int(result["durationMs"]))
+    except Exception:
+        logger.exception("Failed to rotate vote")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rotate vote")
 
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")

@@ -4,9 +4,8 @@ artifact_repo = "pulsefm"
 
 # Placeholder images for initial apply
 vote_api_image              = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-api:bootstrap"
-vote_orchestrator_image     = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-orchestrator:bootstrap"
 encoder_image               = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:bootstrap"
-playback_orchestrator_image = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-orchestrator:bootstrap"
+playback_service_image      = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:bootstrap"
 vote_stream_image           = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-stream:bootstrap"
 
 # Secrets / config

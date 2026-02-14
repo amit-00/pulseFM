@@ -18,22 +18,28 @@ resource "google_project_iam_member" "modal_dispatcher_firestore" {
   member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
 }
 
-resource "google_project_iam_member" "vote_orchestrator_firestore" {
+resource "google_project_iam_member" "playback_service_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+  member  = "serviceAccount:${google_service_account.playback_service.email}"
 }
 
-resource "google_project_iam_member" "vote_orchestrator_pubsub" {
+resource "google_project_iam_member" "playback_service_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+  member  = "serviceAccount:${google_service_account.playback_service.email}"
 }
 
-resource "google_project_iam_member" "playback_orchestrator_firestore" {
+resource "google_project_iam_member" "playback_service_tasks" {
   project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.playback_service.email}"
+}
+
+resource "google_project_iam_member" "eventarc_pubsub_subscriber" {
+  project = var.project_id
+  role    = "roles/pubsub.subscriber"
+  member  = "serviceAccount:${google_service_account.eventarc.email}"
 }
 
 resource "google_project_iam_member" "vote_api_tasks" {
@@ -48,34 +54,16 @@ resource "google_project_iam_member" "vote_api_vpc_access" {
   member  = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
-resource "google_project_iam_member" "playback_orchestrator_tasks" {
-  project = var.project_id
-  role    = "roles/cloudtasks.enqueuer"
-  member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
-}
-
-resource "google_project_iam_member" "playback_orchestrator_vpc_access" {
+resource "google_project_iam_member" "playback_service_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.playback_orchestrator.email}"
+  member  = "serviceAccount:${google_service_account.playback_service.email}"
 }
 
 resource "google_project_iam_member" "vote_stream_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${google_service_account.vote_stream.email}"
-}
-
-resource "google_project_iam_member" "vote_orchestrator_tasks" {
-  project = var.project_id
-  role    = "roles/cloudtasks.enqueuer"
-  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
-}
-
-resource "google_project_iam_member" "vote_orchestrator_vpc_access" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.vote_orchestrator.email}"
 }
 
 resource "google_project_iam_member" "encoder_vpc_access" {
@@ -150,20 +138,14 @@ resource "google_service_account_iam_member" "terraform_act_as_modal_dispatcher"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_service_account_iam_member" "terraform_act_as_vote_orchestrator" {
-  service_account_id = google_service_account.vote_orchestrator.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.terraform.email}"
-}
-
 resource "google_service_account_iam_member" "terraform_act_as_encoder" {
   service_account_id = google_service_account.encoder.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_service_account_iam_member" "terraform_act_as_playback_orchestrator" {
-  service_account_id = google_service_account.playback_orchestrator.name
+resource "google_service_account_iam_member" "terraform_act_as_playback_service" {
+  service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
@@ -187,16 +169,11 @@ resource "google_service_account_iam_member" "cloudtasks_token_creator" {
 }
 
 resource "google_service_account_iam_member" "cloudtasks_token_creator_playback" {
-  service_account_id = google_service_account.playback_orchestrator.name
+  service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 }
 
-resource "google_service_account_iam_member" "cloudtasks_token_creator_vote_orchestrator" {
-  service_account_id = google_service_account.vote_orchestrator.name
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
-}
 
 resource "google_project_iam_member" "cloudbuild_artifact_writer" {
   project = var.project_id
@@ -209,12 +186,6 @@ resource "google_project_iam_member" "gcs_pubsub_publisher" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:service-${data.google_project.current.number}@gs-project-accounts.iam.gserviceaccount.com"
-}
-
-resource "google_service_account_iam_member" "playback_orchestrator_act_as_self" {
-  service_account_id = google_service_account.playback_orchestrator.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.playback_orchestrator.email}"
 }
 
 resource "google_service_account_iam_member" "vote_api_act_as_self" {
@@ -235,8 +206,8 @@ resource "google_service_account_iam_member" "vote_api_sign_blobs" {
   member             = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
-resource "google_service_account_iam_member" "vote_orchestrator_act_as_self" {
-  service_account_id = google_service_account.vote_orchestrator.name
+resource "google_service_account_iam_member" "playback_service_act_as_self" {
+  service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.vote_orchestrator.email}"
+  member             = "serviceAccount:${google_service_account.playback_service.email}"
 }

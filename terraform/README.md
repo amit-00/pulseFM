@@ -1,6 +1,6 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, vote-orchestrator, encoder, playback-orchestrator, vote-stream), Cloud Functions (tally-function, modal-dispatcher), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, vote-stream), Cloud Functions (tally-function, modal-dispatcher), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`
@@ -8,7 +8,7 @@ This directory provisions Cloud Run services (vote-api, vote-orchestrator, encod
 
 ## Inputs (required)
 - `session_jwt_secret`
-- `vote_api_image`, `vote_orchestrator_image`, `encoder_image`, `playback_orchestrator_image`
+- `vote_api_image`, `playback_service_image`, `encoder_image`
 - `github_owner`, `github_repo`
 
 ## Usage
@@ -18,9 +18,8 @@ terraform init
 terraform apply \
   -var="session_jwt_secret=..." \
   -var="vote_api_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-api:placeholder" \
-  -var="vote_orchestrator_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-orchestrator:placeholder" \
   -var="encoder_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:placeholder" \
-  -var="playback_orchestrator_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-orchestrator:placeholder" \
+  -var="playback_service_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:placeholder" \
   -var="github_owner=<owner>" \
   -var="github_repo=<repo>"
 ```
