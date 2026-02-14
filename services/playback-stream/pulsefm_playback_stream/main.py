@@ -308,14 +308,8 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
 
 @app.get("/stream")
 async def stream_votes(
-    request: Request,
-    x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
+    request: Request
 ):
-    if not x_session_id:
-        logger.warning("Missing session id header")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing session id")
-
-    logger.info("Stream connected", extra={"sessionId": x_session_id})
     headers = {
         "Cache-Control": "no-cache",
         "Content-Type": "text/event-stream",
