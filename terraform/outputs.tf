@@ -57,3 +57,27 @@ output "terraform_service_account" {
 output "nextjs_server_service_account" {
   value = google_service_account.nextjs_server.email
 }
+
+output "cdn_hostname" {
+  value = var.cdn_hostname
+}
+
+output "cdn_ip_address" {
+  value = google_compute_global_address.audio_cdn.address
+}
+
+output "cdn_dns_nameservers" {
+  value = google_dns_managed_zone.audio_cdn.name_servers
+}
+
+output "cdn_signed_cookie_key_name" {
+  value = google_compute_backend_bucket_signed_url_key.audio_cdn.name
+}
+
+output "nextjs_session_signing_key_secret" {
+  value = google_secret_manager_secret.nextjs_session_signing_key.id
+}
+
+output "cdn_signed_cookie_key_secret" {
+  value = google_secret_manager_secret.cdn_signed_cookie_key.id
+}

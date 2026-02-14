@@ -108,6 +108,12 @@ resource "google_storage_bucket_iam_member" "eventarc_bucket_reader" {
   member = "serviceAccount:${google_service_account.eventarc.email}"
 }
 
+resource "google_storage_bucket_iam_member" "cdn_bucket_reader" {
+  bucket = google_storage_bucket.generated_songs.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:service-${data.google_project.current.number}@cloud-cdn-fill.iam.gserviceaccount.com"
+}
+
 resource "google_storage_bucket_iam_member" "functions_source_reader" {
   bucket = google_storage_bucket.functions_source.name
   role   = "roles/storage.objectViewer"

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
+import { voteApiFetch } from '@/lib/server/vote-api';
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -7,24 +7,12 @@ export async function POST(request: Request) {
   if (!option) {
     return NextResponse.json({ error: 'Option is required' }, { status: 400 });
   }
+  const sessionId = request.headers.get('x-session-id');
+  if (!sessionId) {
+    return NextResponse.json({ error: 'Missing session id' }, { status: 401 });
+  }
   try {
-    const cookieStore = await cookies();
-    const allCookies = cookieStore.getAll();
-    const cookieHeader = allCookies
-      .map(c => `${c.name}=${c.value}`)
-      .join('; ');
-
-    const response = await fetch(
-      'https://vote-api-156730433405.northamerica-northeast1.run.app/vote',
-      {
-        method: 'POST',
-        headers: {
-          ...(cookieHeader && { Cookie: cookieHeader }),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      }
-    );
+    const response = await voteApiFetch('/vote', 'POST', sessionId, body);
 
     if (!response.ok) {
       const status = response.status;
@@ -39,7 +27,7 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     return NextResponse.json(data);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: 'Failed to send vote request' },
       { status: 500 }

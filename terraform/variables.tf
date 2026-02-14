@@ -72,3 +72,35 @@ variable "github_branch" {
   type    = string
   default = "main"
 }
+
+variable "cdn_hostname" {
+  type    = string
+  default = "cdn.pulsefm.fm"
+}
+
+variable "cdn_dns_zone_name" {
+  type    = string
+  default = "cdn-pulsefm-fm"
+}
+
+variable "cdn_dns_name" {
+  type    = string
+  default = "cdn.pulsefm.fm."
+}
+
+variable "cdn_signed_cookie_key_name" {
+  type    = string
+  default = "pulsefm-cdn-key"
+}
+
+variable "cdn_signed_cookie_key_value" {
+  type        = string
+  description = "Base64 (URL-safe allowed) 128-bit+ key value for Cloud CDN signed cookies."
+  sensitive   = true
+}
+
+variable "nextjs_session_signing_key" {
+  type        = string
+  description = "HMAC secret used by Next.js for signed session cookies."
+  sensitive   = true
+}

@@ -14,6 +14,8 @@ locals {
     "vpcaccess.googleapis.com",
     "compute.googleapis.com",
     "pubsub.googleapis.com",
+    "dns.googleapis.com",
+    "secretmanager.googleapis.com",
   ]
 }
 

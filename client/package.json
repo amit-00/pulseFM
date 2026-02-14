@@ -9,8 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google-cloud/secret-manager": "^6.1.0",
     "axios": "^1.13.2",
     "clsx": "^2.1.1",
+    "google-auth-library": "^10.5.0",
     "lucide-react": "^0.469.0",
     "motion": "^11.15.0",
     "next": "16.1.4",
