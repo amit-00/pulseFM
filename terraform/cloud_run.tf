@@ -228,11 +228,11 @@ resource "google_cloud_run_v2_service" "playback_stream" {
   }
 }
 
-resource "google_cloud_run_v2_service_iam_member" "vote_api_public" {
+resource "google_cloud_run_v2_service_iam_member" "vote_api_nextjs_invoker" {
   name     = google_cloud_run_v2_service.vote_api.name
   location = var.region
   role     = "roles/run.invoker"
-  member   = "allUsers"
+  member   = "serviceAccount:${google_service_account.nextjs_server.email}"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "playback_stream_public" {

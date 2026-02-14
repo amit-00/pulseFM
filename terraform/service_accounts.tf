@@ -28,6 +28,11 @@ resource "google_service_account" "playback_stream" {
   display_name = "playback-stream"
 }
 
+resource "google_service_account" "nextjs_server" {
+  account_id   = "nextjs-server"
+  display_name = "nextjs-server"
+}
+
 resource "google_service_account" "eventarc" {
   account_id   = "eventarc"
   display_name = "eventarc"

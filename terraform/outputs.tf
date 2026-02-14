@@ -53,3 +53,7 @@ output "memorystore_connector" {
 output "terraform_service_account" {
   value = google_service_account.terraform.email
 }
+
+output "nextjs_server_service_account" {
+  value = google_service_account.nextjs_server.email
+}
