@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class Settings:
     vote_events_topic: str = os.getenv("VOTE_EVENTS_TOPIC", "vote-events")
     window_seconds: int = int(os.getenv("WINDOW_SECONDS", "300"))
     options_per_window: int = int(os.getenv("OPTIONS_PER_WINDOW", "4"))
-    vote_options: list[str] = [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()]
+    vote_options: list[str] = field(default_factory=lambda: [opt.strip() for opt in os.getenv("VOTE_OPTIONS", "").split(",") if opt.strip()])
 
 
 settings = Settings()

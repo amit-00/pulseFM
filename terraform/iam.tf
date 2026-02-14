@@ -112,10 +112,6 @@ resource "google_storage_bucket_iam_member" "cdn_bucket_reader" {
   bucket = google_storage_bucket.generated_songs.name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:service-${data.google_project.current.number}@cloud-cdn-fill.iam.gserviceaccount.com"
-
-  # The Cloud CDN fill service agent is auto-provisioned when CDN is first
-  # enabled on a backend bucket.  Ensure that resource exists before the binding.
-  depends_on = [google_compute_backend_bucket.audio_cdn]
 }
 
 resource "google_storage_bucket_iam_member" "functions_source_reader" {
