@@ -100,16 +100,6 @@ resource "google_cloud_run_v2_service" "encoder" {
   }
 }
 
-locals {
-  # All Cloud Run services in the same project/region share the same URL suffix.
-  # Extract it from vote_api (which has no self-reference issues).
-  cloud_run_url_suffix = replace(
-    google_cloud_run_v2_service.vote_api.uri,
-    "https://vote-api",
-    ""
-  )
-}
-
 resource "google_cloud_run_v2_service" "playback_service" {
   name     = "playback-service"
   location = var.region

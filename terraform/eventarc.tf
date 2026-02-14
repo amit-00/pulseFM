@@ -35,9 +35,10 @@ resource "google_eventarc_trigger" "playback_stream_tally" {
     value     = "google.cloud.pubsub.topic.v1.messagePublished"
   }
 
-  matching_criteria {
-    attribute = "topic"
-    value     = google_pubsub_topic.tally_events.id
+  transport {
+    pubsub {
+      topic = google_pubsub_topic.tally_events.id
+    }
   }
 
   destination {
@@ -62,9 +63,10 @@ resource "google_eventarc_trigger" "playback_stream_changeover" {
     value     = "google.cloud.pubsub.topic.v1.messagePublished"
   }
 
-  matching_criteria {
-    attribute = "topic"
-    value     = google_pubsub_topic.playback_events.id
+  transport {
+    pubsub {
+      topic = google_pubsub_topic.playback_events.id
+    }
   }
 
   destination {

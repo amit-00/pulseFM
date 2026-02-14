@@ -11,7 +11,7 @@ resource "google_compute_backend_bucket" "audio_cdn" {
 resource "google_compute_backend_bucket_signed_url_key" "audio_cdn" {
   name           = var.cdn_signed_cookie_key_name
   backend_bucket = google_compute_backend_bucket.audio_cdn.name
-  key_value      = var.cdn_signed_cookie_key_value
+  key_value      = local.cdn_key_value_base64
 }
 
 resource "google_compute_url_map" "audio_cdn" {

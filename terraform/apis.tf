@@ -1,24 +1,3 @@
-locals {
-  services = [
-    "cloudresourcemanager.googleapis.com",
-    "run.googleapis.com",
-    "eventarc.googleapis.com",
-    "cloudtasks.googleapis.com",
-    "firestore.googleapis.com",
-    "artifactregistry.googleapis.com",
-    "cloudbuild.googleapis.com",
-    "cloudfunctions.googleapis.com",
-    "iam.googleapis.com",
-    "storage.googleapis.com",
-    "redis.googleapis.com",
-    "vpcaccess.googleapis.com",
-    "compute.googleapis.com",
-    "pubsub.googleapis.com",
-    "dns.googleapis.com",
-    "secretmanager.googleapis.com",
-  ]
-}
-
 resource "google_project_service" "services" {
   for_each = toset(local.services)
   project  = var.project_id
