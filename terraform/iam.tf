@@ -138,6 +138,12 @@ resource "google_project_iam_member" "terraform_iam_admin" {
   member  = "serviceAccount:${google_service_account.terraform.email}"
 }
 
+resource "google_project_iam_member" "terraform_secret_accessor" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.terraform.email}"
+}
+
 resource "google_service_account_iam_member" "terraform_act_as_vote_api" {
   service_account_id = google_service_account.vote_api.name
   role               = "roles/iam.serviceAccountUser"
