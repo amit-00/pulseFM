@@ -33,12 +33,6 @@ variable "playback_stream_image" {
   description = "Container image for playback-stream (tag or digest)"
 }
 
-variable "session_jwt_secret" {
-  type        = string
-  description = "HMAC secret for session JWTs"
-  sensitive   = true
-}
-
 variable "window_seconds" {
   type    = number
   default = 300

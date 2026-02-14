@@ -7,7 +7,6 @@ This directory provisions Cloud Run services (vote-api, playback-service, encode
 - GitHub repository connected to Cloud Build (for the trigger)
 
 ## Inputs (required)
-- `session_jwt_secret`
 - `vote_api_image`, `playback_service_image`, `playback_stream_image`, `encoder_image`
 - `github_owner`, `github_repo`
 
@@ -16,7 +15,6 @@ This directory provisions Cloud Run services (vote-api, playback-service, encode
 cd terraform
 terraform init
 terraform apply \
-  -var="session_jwt_secret=..." \
   -var="vote_api_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/vote-api:placeholder" \
   -var="encoder_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:placeholder" \
   -var="playback_service_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:placeholder" \

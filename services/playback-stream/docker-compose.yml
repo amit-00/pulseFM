@@ -8,7 +8,6 @@ services:
       - "8092:8080"
     environment:
       - PORT=8080
-      - SESSION_JWT_SECRET=${SESSION_JWT_SECRET}
       - STATIONS_COLLECTION=stations
       - VOTE_STATE_COLLECTION=voteState
       - REDIS_HOST=${REDIS_HOST}

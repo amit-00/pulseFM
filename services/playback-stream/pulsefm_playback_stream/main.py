@@ -4,11 +4,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from fastapi import Cookie, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from google.cloud.firestore import AsyncClient
 
-from pulsefm_auth.session import verify_session_token
 from pulsefm_pubsub.client import decode_pubsub_json
 from pulsefm_redis.client import get_playback_current_snapshot, get_redis_client, poll_tally_key
 
@@ -310,24 +309,13 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
 @app.get("/stream")
 async def stream_votes(
     request: Request,
-    session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name),
+    x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
 ):
-    if not session_cookie:
-        logger.warning("Missing session cookie")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing session cookie")
+    if not x_session_id:
+        logger.warning("Missing session id header")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing session id")
 
-    try:
-        claims = verify_session_token(session_cookie, settings.jwt_secret)
-    except Exception:
-        logger.warning("Invalid session cookie")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session cookie")
-
-    session_id = claims.get("sid")
-    if not session_id:
-        logger.warning("Session cookie missing sid claim")
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session cookie")
-
-    logger.info("Stream connected", extra={"sessionId": session_id})
+    logger.info("Stream connected", extra={"sessionId": x_session_id})
     headers = {
         "Cache-Control": "no-cache",
         "Content-Type": "text/event-stream",

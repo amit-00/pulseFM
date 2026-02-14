@@ -1,21 +1,19 @@
 # Vote API
 
-FastAPI service for issuing anonymous session cookies and accepting votes.
+FastAPI service for accepting votes and downloads with a session id header.
 
 ## Endpoints
-- `POST /session` -> issues signed JWT cookie
 - `POST /vote` -> submits a vote (pre-checks dedupe via Redis, then enqueues)
+- `POST /downloads` -> signed URL for encoded audio
+- `POST /heartbeat` -> heartbeat (rate limited)
 - `GET /health`
 
 ## Required env vars
 - `PROJECT_ID`
 - `LOCATION`
-- `SESSION_JWT_SECRET`
 - `TALLY_FUNCTION_URL`
 
 ## Optional env vars
-- `SESSION_COOKIE_NAME` (default: `pulsefm_session`)
-- `SESSION_TTL_SECONDS` (default: 604800)
 - `VOTE_QUEUE_NAME` (default: `tally-queue`)
 - `TASKS_OIDC_SERVICE_ACCOUNT` (optional service account email for Cloud Tasks OIDC)
 
@@ -23,6 +21,9 @@ FastAPI service for issuing anonymous session cookies and accepting votes.
 ```
 docker compose -f services/vote-api/docker-compose.yml up --build
 ```
+
+## Session header
+All session-required endpoints expect `X-Session-Id`.
 
 ## Cloud Tasks
 Votes are enqueued to the `tally-queue` Cloud Tasks queue with JSON payloads:

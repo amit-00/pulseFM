@@ -2,7 +2,7 @@
 
 This repo includes four FastAPI services and one Cloud Function that implement an anonymous voting system on Cloud Run:
 
-- **vote-api**: issues anonymous session cookies, accepts votes, dedupes, enqueues Cloud Tasks
+- **vote-api**: accepts votes, rate-limits, pre-checks dedupe, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **playback-service**: advances station playback, closes/open votes, and publishes vote events
 - **playback-stream**: streams system state and tally updates over SSE
@@ -46,7 +46,6 @@ History document per window:
 ### Redis keys (canonical tally + dedupe)
 
 - `pulsefm:playback:current` -> JSON snapshot of current song + next song + poll
-- `pulsefm:poll:{voteId}:state` -> HASH: `status`, `opensAt` (epoch ms), `closesAt` (epoch ms)
 - `pulsefm:poll:{voteId}:tally` -> HASH: `option` => count
 - `pulsefm:poll:{voteId}:voted` -> SET of sessionIds
 
@@ -94,8 +93,7 @@ Queues:
 ## Service responsibilities
 
 ### vote-api
-- `POST /session` issues a signed JWT session cookie (HMAC)
-- `POST /vote` validates session, rate-limits, pre-checks dedupe, and enqueues a Cloud Task
+- `POST /vote` requires `X-Session-Id`, rate-limits, pre-checks dedupe, and enqueues a Cloud Task
 
 ### tally-function
 - HTTP function that handles Cloud Tasks and performs the atomic Redis vote operation idempotently
@@ -150,7 +148,6 @@ Tally payload:
 ### vote-api
 - `PROJECT_ID`
 - `LOCATION`
-- `SESSION_JWT_SECRET`
 - `TALLY_FUNCTION_URL`
 
 ### tally-function
@@ -161,7 +158,8 @@ Tally payload:
 - `LOCATION`
 
 ### playback-stream
-- `SESSION_JWT_SECRET`
+- `REDIS_HOST`
+- `REDIS_PORT`
 
 ## Cloud Run deployment notes
 

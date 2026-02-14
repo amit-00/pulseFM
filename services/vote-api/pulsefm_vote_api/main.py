@@ -2,11 +2,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import Cookie, FastAPI, HTTPException, Response, status
+from fastapi import FastAPI, Header, HTTPException, status
 from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 from google.cloud.storage import Client as StorageClient
 
-from pulsefm_auth.session import issue_session_token, verify_session_token
 from pulsefm_tasks.client import enqueue_json_task
 from pulsefm_redis.client import (
     fixed_window_allow,
@@ -14,7 +13,6 @@ from pulsefm_redis.client import (
     get_redis_client,
     has_voted_session,
     poll_tally_key,
-    token_bucket_allow,
 )
 
 from pulsefm_vote_api.config import settings
@@ -86,105 +84,40 @@ async def _check_download_rate_limit(redis_client, session_id: str, vote_id: str
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
 
-async def _check_session_rate_limit(redis_client) -> None:
-    capacity = settings.session_rl_burst
-    refill_per_ms = (settings.session_rl_rate_per_min / 60) / 1000
-    try:
-        allowed = await token_bucket_allow(
-            redis_client,
-            "pulsefm:rl:session:bucket",
-            "pulsefm:rl:session:rps",
-            capacity,
-            refill_per_ms,
-            1,
-            settings.session_rl_rps,
-        )
-        if not allowed:
-            _rate_limited()
-    except Exception:
-        logger.exception("Redis rate limit failed for session bucket")
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-
-
-@app.post("/session")
-async def create_session(response: Response) -> Dict[str, str]:
-    try:
-        redis_client = get_redis_client()
-    except Exception:
-        logger.exception("Redis unavailable for session")
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-    await _check_session_rate_limit(redis_client)
-    token, meta = issue_session_token(settings.jwt_secret, settings.session_ttl_seconds)
-    logger.info("Issued session", extra={"sessionId": meta["session_id"]})
-
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=settings.cookie_max_age(),
-    )
-
-    return {
-        "sessionId": meta["session_id"],
-        "expiresAt": meta["expires_at"].isoformat(),
-    }
-
-
 @app.post("/heartbeat")
-async def send_heartbeat(session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)):
-    if not session_cookie:
-        logger.warning("Missing session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
-
-    try:
-        claims = verify_session_token(session_cookie, settings.jwt_secret)
-    except Exception:
-        logger.warning("Invalid session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
-
-    session_id = claims.get("sid")
-    if not session_id:
-        logger.warning("Session cookie missing sid claim")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+async def send_heartbeat(x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id")):
+    if not x_session_id:
+        logger.warning("Missing session id header")
+        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing session id")
 
     try:
         redis_client = get_redis_client()
     except Exception:
         logger.exception("Redis unavailable for heartbeat")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-    await _check_heartbeat_rate_limit(redis_client, session_id)
+    await _check_heartbeat_rate_limit(redis_client, x_session_id)
 
     db = get_firestore_client()
-    heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(session_id)
+    heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(x_session_id)
     await heartbeat_ref.set({
-        "sessionId": session_id,
+        "sessionId": x_session_id,
         "heartbeatAt": SERVER_TIMESTAMP,
     })
 
     return {"status": "ok"}
 
 @app.post("/vote")
-async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, Any]:
-    if not session_cookie:
-        logger.warning("Missing session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
+async def submit_vote(
+    payload: Dict[str, Any],
+    x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
+) -> Dict[str, Any]:
+    if not x_session_id:
+        logger.warning("Missing session id header")
+        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing session id")
 
     if not settings.tally_function_url:
         logger.error("Missing TALLY_FUNCTION_URL")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "TALLY_FUNCTION_URL is required")
-
-    try:
-        claims = verify_session_token(session_cookie, settings.jwt_secret)
-    except Exception:
-        logger.warning("Invalid session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
-
-    session_id = claims.get("sid")
-    if not session_id:
-        logger.warning("Session cookie missing sid claim")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
 
     vote_id = payload.get("voteId")
     option = payload.get("option")
@@ -217,59 +150,51 @@ async def submit_vote(payload: Dict[str, Any], session_cookie: Optional[str] = C
             logger.info("Invalid option", extra={"voteId": vote_id, "option": option})
             raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid option")
 
-        await _check_vote_rate_limits(redis_client, session_id, vote_id)
+        await _check_vote_rate_limits(redis_client, x_session_id, vote_id)
 
-        if await has_voted_session(redis_client, vote_id, session_id):
-            logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": session_id})
+        if await has_voted_session(redis_client, vote_id, x_session_id):
+            logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": x_session_id})
             raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
     except VoteError:
         raise
     except Exception:
-        logger.exception("Redis vote validation failed", extra={"voteId": vote_id, "sessionId": session_id})
+        logger.exception("Redis vote validation failed", extra={"voteId": vote_id, "sessionId": x_session_id})
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
 
     event = {
         "voteId": vote_id,
         "option": option,
-        "sessionId": session_id,
+        "sessionId": x_session_id,
         "votedAt": datetime.now(timezone.utc).isoformat(),
     }
     try:
         enqueue_json_task(settings.vote_queue_name, settings.tally_function_url, event)
     except Exception:
-        logger.exception("Failed to enqueue tally task", extra={"voteId": vote_id, "sessionId": session_id})
+        logger.exception("Failed to enqueue tally task", extra={"voteId": vote_id, "sessionId": x_session_id})
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to enqueue vote")
 
-    logger.info("Vote accepted", extra={"voteId": vote_id, "sessionId": session_id, "option": option})
+    logger.info("Vote accepted", extra={"voteId": vote_id, "sessionId": x_session_id, "option": option})
     return {"status": "ok"}
 
 @app.post("/downloads")
-async def create_download(payload: Dict[str, Any], session_cookie: Optional[str] = Cookie(default=None, alias=settings.session_cookie_name)) -> Dict[str, str]:
+async def create_download(
+    payload: Dict[str, Any],
+    x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
+) -> Dict[str, str]:
     vote_id = payload.get("voteId")
     if not vote_id:
         raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing voteId")
 
-    if not session_cookie:
-        logger.warning("Missing session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Missing session cookie")
-
-    try:
-        claims = verify_session_token(session_cookie, settings.jwt_secret)
-    except Exception:
-        logger.warning("Invalid session cookie")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
-
-    session_id = claims.get("sid")
-    if not session_id:
-        logger.warning("Session cookie missing sid claim")
-        raise VoteError(status.HTTP_401_UNAUTHORIZED, "Invalid session cookie")
+    if not x_session_id:
+        logger.warning("Missing session id header")
+        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing session id")
 
     try:
         redis_client = get_redis_client()
     except Exception:
         logger.exception("Redis unavailable for downloads")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-    await _check_download_rate_limit(redis_client, session_id, vote_id)
+    await _check_download_rate_limit(redis_client, x_session_id, vote_id)
 
     storage = get_storage_client()
     bucket = storage.bucket(settings.encoded_bucket)

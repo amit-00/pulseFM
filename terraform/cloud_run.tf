@@ -28,10 +28,6 @@ resource "google_cloud_run_v2_service" "vote_api" {
         value = tostring(google_redis_instance.memorystore.port)
       }
       env {
-        name  = "SESSION_JWT_SECRET"
-        value = var.session_jwt_secret
-      }
-      env {
         name  = "TALLY_FUNCTION_URL"
         value = google_cloudfunctions2_function.tally_function.service_config[0].uri
       }
@@ -208,10 +204,6 @@ resource "google_cloud_run_v2_service" "playback_stream" {
     }
     containers {
       image = var.playback_stream_image
-      env {
-        name  = "SESSION_JWT_SECRET"
-        value = var.session_jwt_secret
-      }
       env {
         name  = "STATIONS_COLLECTION"
         value = "stations"

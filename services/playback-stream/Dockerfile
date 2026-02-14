@@ -11,13 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-COPY packages/pulsefm-auth packages/pulsefm-auth
 COPY packages/pulsefm-redis packages/pulsefm-redis
 COPY packages/pulsefm-pubsub packages/pulsefm-pubsub
 COPY services/playback-stream services/playback-stream
 
 RUN pip install --no-cache-dir \
-    ./packages/pulsefm-auth \
     ./packages/pulsefm-redis \
     ./packages/pulsefm-pubsub \
     ./services/playback-stream

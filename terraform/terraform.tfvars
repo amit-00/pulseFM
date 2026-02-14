@@ -9,7 +9,6 @@ playback_service_image      = "northamerica-northeast1-docker.pkg.dev/pulsefm-48
 playback_stream_image       = "northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-stream:bootstrap"
 
 # Secrets / config
-session_jwt_secret = "KZfr62k0f7xUrl49M3sDAaMe8cCf+UCc4A62sz+qzUo="
 
 window_seconds     = 300
 options_per_window = 4

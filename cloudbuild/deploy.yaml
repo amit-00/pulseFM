@@ -19,7 +19,6 @@ steps:
           -var="project_id=${PROJECT_ID}" \
           -var="region=${_REGION}" \
           -var="artifact_repo=${_ARTIFACT_REPO}" \
-          -var="session_jwt_secret=${_SESSION_JWT_SECRET}" \
           -var="vote_api_image=${_VOTE_API_IMAGE}" \
           -var="encoder_image=${_ENCODER_IMAGE}" \
           -var="playback_service_image=${_PLAYBACK_SERVICE_IMAGE}" \
@@ -71,7 +70,6 @@ substitutions:
   _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
   _PLAYBACK_SERVICE_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:placeholder"
   _PLAYBACK_STREAM_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:placeholder"
-  _SESSION_JWT_SECRET: ""
   _WINDOW_SECONDS: "300"
   _OPTIONS_PER_WINDOW: "4"
   _GITHUB_OWNER: ""

@@ -4,7 +4,7 @@ FastAPI service that streams system state and tally updates over SSE.
 
 ## Endpoints
 - `GET /state` -> current state snapshot
-- `GET /stream` -> Server-Sent Events stream (requires session cookie)
+- `GET /stream` -> Server-Sent Events stream (requires `X-Session-Id`)
 - `GET /health`
 
 ## Event types
@@ -15,12 +15,10 @@ FastAPI service that streams system state and tally updates over SSE.
 - `HEARTBEAT`
 
 ## Required env vars
-- `SESSION_JWT_SECRET`
 - `REDIS_HOST`
 - `REDIS_PORT`
 
 ## Optional env vars
-- `SESSION_COOKIE_NAME` (default: `pulsefm_session`)
 - `STREAM_INTERVAL_MS` (default: 500)
 - `TALLY_SNAPSHOT_INTERVAL_SEC` (default: 10)
 - `HEARTBEAT_SEC` (default: 15)
