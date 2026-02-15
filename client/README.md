@@ -3,6 +3,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 ## Runtime env vars
 
 - `VOTE_API_URL`: Cloud Run URL for `vote-api`.
+- `PLAYBACK_STREAM_URL`: Cloud Run URL for `playback-stream` (used by `/api/playback/state` and `/api/playback/stream` proxy routes).
 - `AUTH_SECRET`: Auth.js JWT signing secret (or `NEXTAUTH_SECRET`).
 - `GCP_PROJECT_ID`: GCP project id used for Workload Identity Federation.
 - `GCP_PROJECT_NUMBER`: GCP project number used to build WIF audience.
@@ -15,6 +16,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - `CDN_SIGNING_KEY_VALUE`: Optional fallback key value if not reading from Secret Manager.
 - `CDN_SIGNING_KEY_NAME`: Cloud CDN key name configured on backend bucket (default: `pulsefm-cdn-key`).
 - `CDN_HOSTNAME`: CDN hostname (default: `cdn.pulsefm.fm`).
+- `NEXT_PUBLIC_CDN_HOSTNAME`: Public CDN hostname used by browser audio tags (default: `cdn.pulsefm.fm`).
 - `CDN_COOKIE_DOMAIN`: Domain attribute for Cloud CDN cookie (default: `pulsefm.fm`).
 - `CDN_COOKIE_TTL_SEC`: Signed cookie TTL in seconds (default: `900`).
 
@@ -24,6 +26,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - Auth.js credentials provider creates a stateless JWT session.
 - `proxy.ts` validates the session for all `/api/*` routes (except `/api/session` and `/api/auth/*`) and injects `X-Session-Id` from Auth.js `sub`.
 - Server-side Cloud Run calls use explicit Vercel OIDC token exchange with GCP WIF (keyless).
+- On initial app load, the client verifies session validity; if missing/invalid, it auto-bootstraps a session via `POST /api/session`.
 
 ## Proxy rate limits
 

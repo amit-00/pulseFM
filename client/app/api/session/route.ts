@@ -6,12 +6,10 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    body = {};
   }
-  const name = typeof body.name === "string" ? body.name.trim() : "";
-  if (!name) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  }
+  const providedName = typeof body.name === "string" ? body.name.trim() : "";
+  const name = providedName || `listener-${Math.random().toString(36).slice(2, 8)}`;
   try {
     const result = await signIn("credentials", {
       name,

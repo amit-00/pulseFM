@@ -1,14 +1,76 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+
 import { useAudioSlots } from "./useAudioSlots";
 import { useAudioAnalyser } from "./useAudioAnalyser";
-import { fetchPlayingTrack, fetchNextTrack } from "@/lib/stream";
+import { ensureSession, fetchPlaybackState } from "@/lib/stream";
+import {
+  HelloEvent,
+  PlaybackStateSnapshot,
+  SongChangedEvent,
+  TallyDeltaEvent,
+  TallySnapshotEvent,
+} from "@/lib/types";
 
 type Slot = "first" | "second";
+
+type VoteView = {
+  voteId: string | null;
+  options: Record<string, string>;
+  tallies: Record<string, number>;
+  endTime: number;
+};
+
+function toVoteView(snapshot: PlaybackStateSnapshot | null): VoteView {
+  const poll = snapshot?.poll ?? { voteId: null, options: [], tallies: {}, version: null };
+  const options = Object.fromEntries(poll.options.map((option) => [option, option]));
+  return {
+    voteId: poll.voteId,
+    options,
+    tallies: poll.tallies || {},
+    endTime: snapshot?.currentSong?.endAt ?? Date.now(),
+  };
+}
+
+function formatTime(seconds: number): string {
+  if (seconds <= 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["currentSong"] | null): number {
+  if (!currentSong) return 0;
+  const durationMs = currentSong.durationMs ?? 0;
+  const endAt = currentSong.endAt ?? 0;
+  if (!durationMs || !endAt) return 0;
+  const startAt = endAt - durationMs;
+  const elapsedMs = Math.max(0, Date.now() - startAt);
+  const clampedMs = Math.min(durationMs, elapsedMs);
+  return clampedMs / 1000;
+}
+
+function getSongUrl(voteId: string): string {
+  const host = process.env.NEXT_PUBLIC_CDN_HOSTNAME || "cdn.pulsefm.fm";
+  return `https://${host}/encoded/${voteId}.m4a`;
+}
 
 export function useStreamPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSlot, setActiveSlot] = useState<Slot>("first");
+  const [snapshot, setSnapshot] = useState<PlaybackStateSnapshot | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [hasVoted, setHasVoted] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
+  const [volume, setVolume] = useState(1);
   const audioElementsConnected = useRef(false);
+  const sourceReady = useRef(false);
+  const streamRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const snapshotRef = useRef<PlaybackStateSnapshot | null>(null);
+  const pollVersionRef = useRef<number | null>(null);
 
   const {
     firstSlotAudioRef,
@@ -16,7 +78,6 @@ export function useStreamPlayer() {
     getActiveAudioRef,
     getInactiveAudioRef,
     loadTrackToSlot,
-    setTrackTime,
     getInactiveSlot,
   } = useAudioSlots();
 
@@ -29,14 +90,25 @@ export function useStreamPlayer() {
     initializeAudioContext,
   } = useAudioAnalyser();
 
-  const calculateStartTime = useCallback((durationElapsedMs: number, requestDelta: number): number => {
-    return (durationElapsedMs + requestDelta) / 1000;
+  const refreshState = useCallback(async () => {
+    const nextSnapshot = await fetchPlaybackState();
+    setSnapshot(nextSnapshot);
+    snapshotRef.current = nextSnapshot;
+    pollVersionRef.current = nextSnapshot.poll.version;
+    setHasVoted(false);
+    setSelectedOption(null);
+    return nextSnapshot;
   }, []);
 
-  // Connect audio elements to analyser when they're available
+  const ensureCookie = useCallback(async () => {
+    const response = await fetch("/api/cdn-cookie", { method: "POST" });
+    if (!response.ok) {
+      throw new Error("Failed to mint CDN cookie");
+    }
+  }, []);
+
   const connectAudioElements = useCallback(() => {
     if (audioElementsConnected.current) return;
-
     if (firstSlotAudioRef.current) {
       connectAudioElement(firstSlotAudioRef.current);
     }
@@ -44,106 +116,300 @@ export function useStreamPlayer() {
       connectAudioElement(secondSlotAudioRef.current);
     }
     audioElementsConnected.current = true;
-  }, [firstSlotAudioRef, secondSlotAudioRef, connectAudioElement]);
+  }, [connectAudioElement, firstSlotAudioRef, secondSlotAudioRef]);
 
-  const handleSlotEnd = useCallback(async () => {
-    if (!isPlaying) return;
-
-    try {
-      const newActiveSlot = getInactiveSlot(activeSlot);
-      const newActiveAudioRef = getActiveAudioRef(newActiveSlot);
-
-      // Start playing the newly active slot
-      if (newActiveAudioRef.current) {
-        await newActiveAudioRef.current.play();
+  const applySongChangeover = useCallback(
+    async (nextSnapshot: PlaybackStateSnapshot) => {
+      if (!isPlaying) {
+        sourceReady.current = false;
+        return;
       }
 
-      setActiveSlot(newActiveSlot);
+      const currentVoteId = nextSnapshot.currentSong.voteId;
+      if (!currentVoteId) {
+        return;
+      }
 
-      // Fetch and load next track for the newly inactive slot
-      const nextTrack = await fetchNextTrack();
-      const newInactiveSlot = getInactiveSlot(newActiveSlot);
-      loadTrackToSlot(newInactiveSlot, nextTrack.signed_url);
-    } catch (error) {
-      console.error("Error switching slots:", error);
-      setIsPlaying(false);
-      stopAnalysing();
-    }
-  }, [activeSlot, isPlaying, getActiveAudioRef, getInactiveSlot, loadTrackToSlot, stopAnalysing]);
+      await ensureCookie();
+
+      const inactiveSlot = getInactiveSlot(activeSlot);
+      const newActiveRef = getActiveAudioRef(inactiveSlot);
+      const oldActiveRef = getActiveAudioRef(activeSlot);
+      const nextVoteId = nextSnapshot.nextSong.voteId;
+      const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
+
+      if (newActiveRef.current) {
+        newActiveRef.current.src = getSongUrl(currentVoteId);
+        newActiveRef.current.currentTime = startOffsetSec;
+        newActiveRef.current.volume = volume;
+        await newActiveRef.current.play();
+      }
+
+      if (oldActiveRef.current) {
+        oldActiveRef.current.pause();
+      }
+
+      if (nextVoteId) {
+        loadTrackToSlot(activeSlot, getSongUrl(nextVoteId));
+      } else {
+        const inactiveRef = getInactiveAudioRef(inactiveSlot);
+        if (inactiveRef.current) {
+          inactiveRef.current.removeAttribute("src");
+        }
+      }
+
+      setActiveSlot(inactiveSlot);
+      startAnalysing();
+    },
+    [
+      activeSlot,
+      ensureCookie,
+      getActiveAudioRef,
+      getInactiveAudioRef,
+      getInactiveSlot,
+      isPlaying,
+      loadTrackToSlot,
+      startAnalysing,
+      volume,
+    ],
+  );
+
+  const connectStream = useCallback(() => {
+    streamRef.current?.close();
+    const es = new EventSource("/api/playback/stream");
+    streamRef.current = es;
+
+    es.addEventListener("HELLO", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as HelloEvent;
+        pollVersionRef.current = data.version;
+      } catch {
+        setStreamError("Invalid HELLO event payload");
+      }
+    });
+
+    es.addEventListener("TALLY_SNAPSHOT", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as TallySnapshotEvent;
+        setSnapshot((prev) => {
+          if (!prev || prev.poll.voteId !== data.voteId) {
+            return prev;
+          }
+          const next = {
+            ...prev,
+            poll: { ...prev.poll, tallies: data.tallies },
+          };
+          snapshotRef.current = next;
+          return next;
+        });
+      } catch {
+        setStreamError("Invalid TALLY_SNAPSHOT payload");
+      }
+    });
+
+    es.addEventListener("TALLY_DELTA", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as TallyDeltaEvent;
+        setSnapshot((prev) => {
+          if (!prev || prev.poll.voteId !== data.voteId) {
+            return prev;
+          }
+          const nextTallies = { ...prev.poll.tallies };
+          for (const [option, delta] of Object.entries(data.delta || {})) {
+            nextTallies[option] = Math.max(0, (nextTallies[option] || 0) + Number(delta || 0));
+          }
+          const next = {
+            ...prev,
+            poll: { ...prev.poll, tallies: nextTallies },
+          };
+          snapshotRef.current = next;
+          return next;
+        });
+      } catch {
+        setStreamError("Invalid TALLY_DELTA payload");
+      }
+    });
+
+    es.addEventListener("SONG_CHANGED", async (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as SongChangedEvent;
+        if (pollVersionRef.current !== null && data.version === pollVersionRef.current) {
+          return;
+        }
+        const nextSnapshot = await refreshState();
+        await applySongChangeover(nextSnapshot);
+      } catch {
+        setStreamError("Failed to apply song changeover");
+      }
+    });
+
+    es.onerror = () => {
+      es.close();
+      streamRef.current = null;
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+      reconnectTimerRef.current = window.setTimeout(async () => {
+        try {
+          await refreshState();
+        } catch {
+          // keep stream reconnect loop alive even when state fetch fails
+        }
+        connectStream();
+      }, 1000);
+    };
+  }, [applySongChangeover, refreshState]);
 
   const handlePlayPause = useCallback(async () => {
-    const audioRef = getActiveAudioRef(activeSlot);
+    const activeAudioRef = getActiveAudioRef(activeSlot);
 
     if (isPlaying) {
-      audioRef.current?.pause();
+      activeAudioRef.current?.pause();
       setIsPlaying(false);
       stopAnalysing();
       return;
     }
 
+    const currentSnapshot = snapshotRef.current;
+    const currentVoteId = currentSnapshot?.currentSong.voteId;
+    if (!currentSnapshot || !currentVoteId) {
+      setStreamError("Playback state unavailable");
+      return;
+    }
+
     try {
-      // Initialize audio context on user interaction (required by browsers)
       initializeAudioContext();
       connectAudioElements();
+      await ensureCookie();
 
-      const requestTimestamp = performance.now();
-      const playingTrack = await fetchPlayingTrack();
-      const responseTimestamp = performance.now();
-      const delta = responseTimestamp - requestTimestamp;
-
-      const startTimeSeconds = calculateStartTime(playingTrack.duration_elapsed_ms, delta);
-
-      if (audioRef.current) {
-        audioRef.current.src = playingTrack.signed_url;
-        audioRef.current.currentTime = startTimeSeconds;
-        await audioRef.current.play();
+      const startTimeSeconds = computePlaybackOffsetSeconds(currentSnapshot.currentSong);
+      if (activeAudioRef.current) {
+        activeAudioRef.current.src = getSongUrl(currentVoteId);
+        activeAudioRef.current.currentTime = startTimeSeconds;
+        activeAudioRef.current.volume = volume;
+        await activeAudioRef.current.play();
       }
 
+      const nextVoteId = currentSnapshot.nextSong.voteId;
+      if (nextVoteId) {
+        const inactiveSlot = getInactiveSlot(activeSlot);
+        loadTrackToSlot(inactiveSlot, getSongUrl(nextVoteId));
+      }
+
+      sourceReady.current = true;
       setIsPlaying(true);
       startAnalysing();
-
-      // Preload next track
-      const nextTrack = await fetchNextTrack();
-      const inactiveSlot = getInactiveSlot(activeSlot);
-      loadTrackToSlot(inactiveSlot, nextTrack.signed_url);
-    } catch (error) {
-      console.error("Error loading track:", error);
+    } catch {
+      setStreamError("Failed to start playback");
       stopAnalysing();
     }
   }, [
     activeSlot,
-    isPlaying,
+    connectAudioElements,
+    ensureCookie,
     getActiveAudioRef,
     getInactiveSlot,
-    loadTrackToSlot,
-    calculateStartTime,
     initializeAudioContext,
-    connectAudioElements,
+    isPlaying,
+    loadTrackToSlot,
     startAnalysing,
     stopAnalysing,
+    volume,
   ]);
 
-  // Set up event listeners for track end
+  const submitVote = useCallback(async (optionKey: string) => {
+    const voteId = snapshotRef.current?.poll.voteId;
+    if (!voteId || isSubmittingVote) return;
+
+    setIsSubmittingVote(true);
+    setVoteError(null);
+    try {
+      const response = await fetch("/api/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voteId, option: optionKey }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "Vote failed");
+      }
+      setHasVoted(true);
+      setSelectedOption(optionKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Vote failed";
+      setVoteError(message);
+    } finally {
+      setIsSubmittingVote(false);
+    }
+  }, [isSubmittingVote]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await ensureSession();
+        if (cancelled) return;
+        await refreshState();
+        if (cancelled) return;
+        connectStream();
+      } catch {
+        if (!cancelled) {
+          setStreamError("Failed to initialize playback");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      streamRef.current?.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, [connectStream, refreshState]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const endAt = snapshotRef.current?.currentSong.endAt;
+      if (!endAt) {
+        setTimeRemaining(0);
+        return;
+      }
+      const seconds = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      setTimeRemaining(seconds);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const firstAudio = firstSlotAudioRef.current;
     const secondAudio = secondSlotAudioRef.current;
-
-    if (firstAudio) {
-      firstAudio.addEventListener("ended", handleSlotEnd);
-    }
-    if (secondAudio) {
-      secondAudio.addEventListener("ended", handleSlotEnd);
-    }
-
-    return () => {
-      if (firstAudio) {
-        firstAudio.removeEventListener("ended", handleSlotEnd);
-      }
-      if (secondAudio) {
-        secondAudio.removeEventListener("ended", handleSlotEnd);
-      }
+    const onEnded = () => {
+      setIsPlaying(false);
+      stopAnalysing();
     };
-  }, [handleSlotEnd]);
+
+    firstAudio?.addEventListener("ended", onEnded);
+    secondAudio?.addEventListener("ended", onEnded);
+    return () => {
+      firstAudio?.removeEventListener("ended", onEnded);
+      secondAudio?.removeEventListener("ended", onEnded);
+    };
+  }, [firstSlotAudioRef, secondSlotAudioRef, stopAnalysing]);
+
+  useEffect(() => {
+    const allRefs = [firstSlotAudioRef.current, secondSlotAudioRef.current];
+    for (const ref of allRefs) {
+      if (ref) {
+        ref.volume = volume;
+      }
+    }
+  }, [firstSlotAudioRef, secondSlotAudioRef, volume]);
+
+  const voteData = useMemo(() => toVoteView(snapshot), [snapshot]);
+  const isExpired = timeRemaining <= 0;
+  const formattedTime = useMemo(() => formatTime(timeRemaining), [timeRemaining]);
 
   return {
     isPlaying,
@@ -152,5 +418,17 @@ export function useStreamPlayer() {
     secondSlotAudioRef,
     frequencyData,
     isAnalysing,
+    voteData,
+    hasVoted,
+    selectedOption,
+    isSubmittingVote,
+    voteError,
+    submitVote,
+    formattedTime,
+    isExpired,
+    streamError,
+    volume,
+    setVolume,
+    sourceReady: sourceReady.current,
   };
 }
