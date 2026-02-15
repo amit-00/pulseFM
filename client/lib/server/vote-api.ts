@@ -1,6 +1,4 @@
-import { GoogleAuth } from "google-auth-library";
-
-const auth = new GoogleAuth();
+import { cloudRunFetch } from "@/lib/server/cloud-run";
 
 function _getVoteApiBaseUrl(): string {
   return (
@@ -17,20 +15,13 @@ export async function voteApiFetch(
   sessionId: string,
   body?: JsonValue,
 ): Promise<Response> {
-  const baseUrl = _getVoteApiBaseUrl().replace(/\/$/, "");
-  const url = `${baseUrl}${path}`;
-  const idTokenClient = await auth.getIdTokenClient(baseUrl);
-  const authHeaders = await idTokenClient.getRequestHeaders(url);
-  const headers = new Headers({
-    ...authHeaders,
-    "X-Session-Id": sessionId,
-  });
-  if (body) {
-    headers.set("Content-Type", "application/json");
-  }
-  return fetch(url, {
+  return cloudRunFetch({
+    baseUrl: _getVoteApiBaseUrl(),
+    path,
     method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body,
+    headers: {
+      "X-Session-Id": sessionId,
+    },
   });
 }

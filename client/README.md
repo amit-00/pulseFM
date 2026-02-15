@@ -4,6 +4,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 - `VOTE_API_URL`: Cloud Run URL for `vote-api`.
 - `AUTH_SECRET`: Auth.js JWT signing secret (or `NEXTAUTH_SECRET`).
+- `GCP_PROJECT_ID`: GCP project id used for Workload Identity Federation.
+- `GCP_PROJECT_NUMBER`: GCP project number used to build WIF audience.
+- `GCP_SERVICE_ACCOUNT_EMAIL`: Service account email to impersonate (nextjs-server SA).
+- `GCP_WORKLOAD_IDENTITY_POOL_ID`: Workload Identity Pool id.
+- `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`: Workload Identity Pool Provider id.
 - `UPSTASH_REDIS_REST_URL`: Upstash Redis REST endpoint URL.
 - `UPSTASH_REDIS_REST_TOKEN`: Upstash Redis REST auth token.
 - `CDN_SIGNING_KEY_SECRET`: Optional Secret Manager secret id/path for Cloud CDN key (default: `cdn-signed-cookie-key`).
@@ -18,6 +23,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - `POST /api/session` with JSON payload `{ "name": "..." }`.
 - Auth.js credentials provider creates a stateless JWT session.
 - `proxy.ts` validates the session for all `/api/*` routes (except `/api/session` and `/api/auth/*`) and injects `X-Session-Id` from Auth.js `sub`.
+- Server-side Cloud Run calls use explicit Vercel OIDC token exchange with GCP WIF (keyless).
 
 ## Proxy rate limits
 
