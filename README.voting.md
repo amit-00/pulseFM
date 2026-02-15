@@ -103,7 +103,7 @@ Queues:
 
 ### playback-stream
 - `GET /state` returns the current state snapshot
-- `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, STATE_INVALIDATED, HEARTBEAT)
+- `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, SONG_CHANGED, HEARTBEAT)
 
 ### modal-dispatcher
 - Pub/Sub triggered (CLOSE events) to dispatch the Modal worker when listeners are active

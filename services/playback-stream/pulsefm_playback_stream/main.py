@@ -181,13 +181,12 @@ def _consume_dirty(vote_id: str | None) -> bool:
     return False
 
 
-def _invalidate_state(vote_id: str | None, version: Any, reason: str) -> None:
+def _invalidate_state(vote_id: str | None, version: Any) -> None:
     global _last_invalidated
     _last_invalidated = {
         "voteId": vote_id,
         "ts": _utc_ms(),
         "version": version,
-        "reason": reason,
     }
 
 
@@ -227,7 +226,6 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     _invalidate_state(
         poll.get("voteId"),
         poll.get("version"),
-        "song_changed",
     )
     logger.info("State invalidated on changeover", extra={"voteId": poll.get("voteId") if poll else None})
     return {"status": "ok"}
@@ -271,7 +269,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
 
         # Handle invalidation first so no stale delta events are emitted after song changeover.
         if _last_invalidated and _last_invalidated.get("ts", 0) > last_invalidated_at:
-            yield _format_sse("STATE_INVALIDATED", _last_invalidated)
+            yield _format_sse("SONG_CHANGED", _last_invalidated)
             last_invalidated_at = _last_invalidated.get("ts", 0)
             snapshot = await _get_state_snapshot(db)
             vote_id = snapshot.get("poll", {}).get("voteId")

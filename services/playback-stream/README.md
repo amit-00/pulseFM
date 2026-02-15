@@ -11,7 +11,7 @@ FastAPI service that streams system state and tally updates over SSE.
 - `HELLO`
 - `TALLY_SNAPSHOT`
 - `TALLY_DELTA`
-- `STATE_INVALIDATED`
+- `SONG_CHANGED`
 - `HEARTBEAT`
 
 ## Required env vars
