@@ -254,11 +254,23 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
         },
     )
 
-    last_snapshot_at = 0.0
+    # Emit an initial tally snapshot immediately on connect.
+    initial_tallies = await _get_tallies(redis_client, vote_id)
+    yield _format_sse(
+        "TALLY_SNAPSHOT",
+        {"voteId": vote_id, "ts": _utc_ms(), "tallies": initial_tallies},
+    )
+
+    now_loop = asyncio.get_event_loop().time()
+    connected_at_ms = _utc_ms()
+    last_known_invalidation_ts = int((_last_invalidated or {}).get("ts", 0))
+    # Only emit SONG_CHANGED for invalidations that happen after this client connects.
+    last_invalidated_at = max(connected_at_ms, last_known_invalidation_ts)
+
+    last_snapshot_at = now_loop
     last_delta_at = 0.0
     last_heartbeat_at = 0.0
-    last_invalidated_at = 0.0
-    last_tallies: Dict[str, int] = {}
+    last_tallies: Dict[str, int] = initial_tallies
 
     while True:
         if await request.is_disconnected():
