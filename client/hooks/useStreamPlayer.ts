@@ -49,9 +49,17 @@ function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["curren
   return clampedMs / 1000;
 }
 
-function getSongUrl(voteId: string): string {
-  const host = process.env.NEXT_PUBLIC_CDN_HOSTNAME || "cdn.pulsefm.fm";
-  return `https://${host}/encoded/${voteId}.m4a`;
+async function fetchSignedUrls(voteIds: string[]): Promise<Record<string, string>> {
+  const response = await fetch("/api/cdn-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ voteIds }),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to get signed URLs");
+  }
+  const data = (await response.json()) as { urls: Record<string, string> };
+  return data.urls;
 }
 
 export function useStreamPlayer() {
@@ -100,13 +108,6 @@ export function useStreamPlayer() {
     return nextSnapshot;
   }, []);
 
-  const ensureCookie = useCallback(async () => {
-    const response = await fetch("/api/cdn-cookie", { method: "POST" });
-    if (!response.ok) {
-      throw new Error("Failed to mint CDN cookie");
-    }
-  }, []);
-
   const connectAudioElements = useCallback(() => {
     if (audioElementsConnected.current) return;
     if (firstSlotAudioRef.current) {
@@ -130,16 +131,17 @@ export function useStreamPlayer() {
         return;
       }
 
-      await ensureCookie();
+      const nextVoteId = nextSnapshot.nextSong.voteId;
+      const idsToSign = [currentVoteId, ...(nextVoteId ? [nextVoteId] : [])];
+      const urls = await fetchSignedUrls(idsToSign);
 
       const inactiveSlot = getInactiveSlot(activeSlot);
       const newActiveRef = getActiveAudioRef(inactiveSlot);
       const oldActiveRef = getActiveAudioRef(activeSlot);
-      const nextVoteId = nextSnapshot.nextSong.voteId;
       const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
 
       if (newActiveRef.current) {
-        newActiveRef.current.src = getSongUrl(currentVoteId);
+        newActiveRef.current.src = urls[currentVoteId];
         newActiveRef.current.currentTime = startOffsetSec;
         newActiveRef.current.volume = volume;
         await newActiveRef.current.play();
@@ -149,8 +151,8 @@ export function useStreamPlayer() {
         oldActiveRef.current.pause();
       }
 
-      if (nextVoteId) {
-        loadTrackToSlot(activeSlot, getSongUrl(nextVoteId));
+      if (nextVoteId && urls[nextVoteId]) {
+        loadTrackToSlot(activeSlot, urls[nextVoteId]);
       } else {
         const inactiveRef = getInactiveAudioRef(inactiveSlot);
         if (inactiveRef.current) {
@@ -163,7 +165,6 @@ export function useStreamPlayer() {
     },
     [
       activeSlot,
-      ensureCookie,
       getActiveAudioRef,
       getInactiveAudioRef,
       getInactiveSlot,
@@ -280,20 +281,22 @@ export function useStreamPlayer() {
     try {
       initializeAudioContext();
       connectAudioElements();
-      await ensureCookie();
+
+      const nextVoteId = currentSnapshot.nextSong.voteId;
+      const idsToSign = [currentVoteId, ...(nextVoteId ? [nextVoteId] : [])];
+      const urls = await fetchSignedUrls(idsToSign);
 
       const startTimeSeconds = computePlaybackOffsetSeconds(currentSnapshot.currentSong);
       if (activeAudioRef.current) {
-        activeAudioRef.current.src = getSongUrl(currentVoteId);
+        activeAudioRef.current.src = urls[currentVoteId];
         activeAudioRef.current.currentTime = startTimeSeconds;
         activeAudioRef.current.volume = volume;
         await activeAudioRef.current.play();
       }
 
-      const nextVoteId = currentSnapshot.nextSong.voteId;
-      if (nextVoteId) {
+      if (nextVoteId && urls[nextVoteId]) {
         const inactiveSlot = getInactiveSlot(activeSlot);
-        loadTrackToSlot(inactiveSlot, getSongUrl(nextVoteId));
+        loadTrackToSlot(inactiveSlot, urls[nextVoteId]);
       }
 
       sourceReady.current = true;
@@ -306,7 +309,6 @@ export function useStreamPlayer() {
   }, [
     activeSlot,
     connectAudioElements,
-    ensureCookie,
     getActiveAudioRef,
     getInactiveSlot,
     initializeAudioContext,
