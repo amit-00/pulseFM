@@ -27,6 +27,18 @@ terraform apply \
 
 After the trigger is created (it is disabled by default), run it manually in Cloud Build. It will apply Terraform, build/push images, and deploy Cloud Run by digest.
 
+## Vercel OIDC (production only)
+- Terraform provisions a Workload Identity Pool + Provider for the Vercel team issuer.
+- Impersonation is restricted to subject: `owner:amit00s-projects:project:pulse-fm:environment:production`.
+- The following Terraform outputs should be set in Vercel for the server app:
+  - `project_number`
+  - `nextjs_server_service_account`
+  - `vercel_wif_pool_id`
+  - `vercel_wif_provider_id`
+- Keep these Vercel-side values aligned with Terraform defaults unless intentionally overridden:
+  - issuer: `https://oidc.vercel.com/amit00s-projects`
+  - audience: `https://vercel.com/amit00s-projects`
+
 ## CDN notes
 - CDN hostname defaults to `cdn.pulsefm.fm`.
 - Terraform creates a Cloud DNS managed zone for `cdn.pulsefm.fm.` and publishes the A record.

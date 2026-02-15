@@ -104,3 +104,33 @@ variable "nextjs_session_signing_key" {
   description = "HMAC secret used by Next.js for signed session cookies."
   sensitive   = true
 }
+
+variable "vercel_team_slug" {
+  type        = string
+  description = "Vercel team slug used for team issuer mode."
+  default     = "amit00s-projects"
+}
+
+variable "vercel_project_slug" {
+  type        = string
+  description = "Vercel project slug allowed to impersonate the Next.js service account."
+  default     = "pulse-fm"
+}
+
+variable "vercel_oidc_issuer_url" {
+  type        = string
+  description = "Vercel OIDC issuer URL."
+  default     = "https://oidc.vercel.com/amit00s-projects"
+}
+
+variable "vercel_oidc_audience" {
+  type        = string
+  description = "Allowed audience for Vercel OIDC tokens."
+  default     = "https://vercel.com/amit00s-projects"
+}
+
+variable "vercel_oidc_environment" {
+  type        = string
+  description = "Vercel environment allowed for OIDC impersonation."
+  default     = "production"
+}

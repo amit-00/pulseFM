@@ -81,3 +81,19 @@ output "nextjs_session_signing_key_secret" {
 output "cdn_signed_cookie_key_secret" {
   value = google_secret_manager_secret.cdn_signed_cookie_key.id
 }
+
+output "project_number" {
+  value = data.google_project.current.number
+}
+
+output "vercel_wif_pool_id" {
+  value = google_iam_workload_identity_pool.vercel.workload_identity_pool_id
+}
+
+output "vercel_wif_provider_id" {
+  value = google_iam_workload_identity_pool_provider.vercel.workload_identity_pool_provider_id
+}
+
+output "vercel_oidc_subject" {
+  value = local.vercel_oidc_subject
+}

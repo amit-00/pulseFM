@@ -9,6 +9,8 @@ locals {
     "cloudbuild.googleapis.com",
     "cloudfunctions.googleapis.com",
     "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "sts.googleapis.com",
     "storage.googleapis.com",
     "redis.googleapis.com",
     "vpcaccess.googleapis.com",
@@ -32,4 +34,3 @@ locals {
     "_"
   )
 }
-
