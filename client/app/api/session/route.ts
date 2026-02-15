@@ -1,28 +1,26 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { signIn } from "@/auth";
 
-import { getSecretValue } from "@/lib/server/secrets";
-import { mintSignedSessionValue, SESSION_COOKIE_NAME } from "@/lib/server/session-cookie";
-
-const SESSION_SIGNING_KEY_SECRET =
-  process.env.SESSION_SIGNING_KEY_SECRET || "nextjs-session-signing-key";
-
-export async function POST() {
+export async function POST(request: Request) {
+  let body: { name?: unknown } = {};
   try {
-    const signingKey = await getSecretValue(SESSION_SIGNING_KEY_SECRET, "SESSION_SIGNING_KEY");
-    const sessionId = randomUUID();
-    const signedValue = await mintSignedSessionValue(sessionId, signingKey);
-
-    const response = NextResponse.json({ sessionId });
-    response.cookies.set({
-      name: SESSION_COOKIE_NAME,
-      value: signedValue,
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) {
+    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  }
+  try {
+    const result = await signIn("credentials", {
+      name,
+      redirect: false,
     });
-    return response;
+    if (result?.error) {
+      return NextResponse.json({ error: "Invalid session bootstrap request" }, { status: 401 });
+    }
+    return NextResponse.json({ status: "ok" });
   } catch {
     return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
   }

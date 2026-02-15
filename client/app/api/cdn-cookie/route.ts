@@ -3,13 +3,12 @@ import { NextResponse } from "next/server";
 import { buildCloudCdnCookieValue } from "@/lib/server/cdn-cookie";
 import { getSecretValue } from "@/lib/server/secrets";
 
-const CDN_SIGNING_KEY_SECRET =
-  process.env.CDN_SIGNING_KEY_SECRET || "cdn-signed-cookie-key";
+const CDN_SIGNING_KEY_SECRET = process.env.CDN_SIGNING_KEY_SECRET || "";
 
-const CDN_HOSTNAME = process.env.CDN_HOSTNAME || "cdn.pulsefm.fm";
-const CDN_COOKIE_DOMAIN = process.env.CDN_COOKIE_DOMAIN || "pulsefm.fm";
-const CDN_KEY_NAME = process.env.CDN_SIGNING_KEY_NAME || "pulsefm-cdn-key";
-const CDN_COOKIE_TTL_SEC = Number(process.env.CDN_COOKIE_TTL_SEC || "900");
+const CDN_HOSTNAME = process.env.CDN_HOSTNAME || "";
+const CDN_COOKIE_DOMAIN = process.env.CDN_COOKIE_DOMAIN || "";
+const CDN_KEY_NAME = process.env.CDN_SIGNING_KEY_NAME || "";
+const CDN_COOKIE_TTL_SEC = Number(process.env.CDN_COOKIE_TTL_SEC || "0");
 
 export async function POST(request: Request) {
   const sessionId = request.headers.get("x-session-id");

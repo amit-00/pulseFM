@@ -3,14 +3,19 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 ## Runtime env vars
 
 - `VOTE_API_URL`: Cloud Run URL for `vote-api`.
-- `SESSION_SIGNING_KEY`: HMAC key for signed session cookies (inject from Secret Manager).
-- `SESSION_SIGNING_KEY_SECRET`: Optional Secret Manager secret id/path for session key (default: `nextjs-session-signing-key`).
+- `AUTH_SECRET`: Auth.js JWT signing secret (or `NEXTAUTH_SECRET`).
 - `CDN_SIGNING_KEY_SECRET`: Optional Secret Manager secret id/path for Cloud CDN key (default: `cdn-signed-cookie-key`).
 - `CDN_SIGNING_KEY_VALUE`: Optional fallback key value if not reading from Secret Manager.
 - `CDN_SIGNING_KEY_NAME`: Cloud CDN key name configured on backend bucket (default: `pulsefm-cdn-key`).
 - `CDN_HOSTNAME`: CDN hostname (default: `cdn.pulsefm.fm`).
 - `CDN_COOKIE_DOMAIN`: Domain attribute for Cloud CDN cookie (default: `pulsefm.fm`).
 - `CDN_COOKIE_TTL_SEC`: Signed cookie TTL in seconds (default: `900`).
+
+## Session bootstrap
+
+- `POST /api/session` with JSON payload `{ "name": "..." }`.
+- Auth.js credentials provider creates a stateless JWT session.
+- `proxy.ts` validates the session for all `/api/*` routes (except `/api/session` and `/api/auth/*`) and injects `X-Session-Id` from Auth.js `sub`.
 
 ## Getting Started
 

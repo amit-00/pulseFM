@@ -1,6 +1,5 @@
 from .client import (
     add_voted_session,
-    fixed_window_allow,
     get_playback_current_snapshot,
     get_redis_client,
     get_poll_tallies,
@@ -13,12 +12,10 @@ from .client import (
     poll_voted_key,
     record_vote_atomic,
     set_playback_current_snapshot,
-    token_bucket_allow,
 )
 
 __all__ = [
     "add_voted_session",
-    "fixed_window_allow",
     "get_playback_current_snapshot",
     "get_redis_client",
     "get_poll_tallies",
@@ -31,5 +28,4 @@ __all__ = [
     "poll_voted_key",
     "record_vote_atomic",
     "set_playback_current_snapshot",
-    "token_bucket_allow",
 ]

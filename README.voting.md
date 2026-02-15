@@ -2,7 +2,7 @@
 
 This repo includes four FastAPI services and one Cloud Function that implement an anonymous voting system on Cloud Run:
 
-- **vote-api**: accepts votes, rate-limits, pre-checks dedupe, enqueues Cloud Tasks
+- **vote-api**: accepts votes, pre-checks dedupe, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **playback-service**: advances station playback, closes/open votes, and publishes vote events
 - **playback-stream**: streams system state and tally updates over SSE
@@ -93,7 +93,7 @@ Queues:
 ## Service responsibilities
 
 ### vote-api
-- `POST /vote` requires `X-Session-Id`, rate-limits, pre-checks dedupe, and enqueues a Cloud Task
+- `POST /vote` requires `X-Session-Id`, pre-checks dedupe, and enqueues a Cloud Task
 
 ### tally-function
 - HTTP function that handles Cloud Tasks and performs the atomic Redis vote operation idempotently

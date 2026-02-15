@@ -8,7 +8,6 @@ from google.cloud.storage import Client as StorageClient
 
 from pulsefm_tasks.client import enqueue_json_task
 from pulsefm_redis.client import (
-    fixed_window_allow,
     get_playback_current_snapshot,
     get_redis_client,
     has_voted_session,
@@ -47,43 +46,6 @@ class VoteError(HTTPException):
         super().__init__(status_code=status_code, detail=detail)
 
 
-def _rate_limited() -> None:
-    raise VoteError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited")
-
-
-async def _check_vote_rate_limits(redis_client, session_id: str, vote_id: str) -> None:
-    sess_key = f"pulsefm:rl:vote:sess:{session_id}"
-    poll_key = f"pulsefm:rl:vote:poll:{vote_id}"
-    try:
-        if not await fixed_window_allow(redis_client, sess_key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-            _rate_limited()
-        if not await fixed_window_allow(redis_client, poll_key, settings.vote_rl_poll_limit, settings.vote_rl_poll_window):
-            _rate_limited()
-    except Exception:
-        logger.exception("Redis rate limit failed", extra={"sessionId": session_id, "voteId": vote_id})
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-
-
-async def _check_heartbeat_rate_limit(redis_client, session_id: str) -> None:
-    key = f"pulsefm:rl:heartbeat:sess:{session_id}"
-    try:
-        if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-            _rate_limited()
-    except Exception:
-        logger.exception("Redis rate limit failed", extra={"sessionId": session_id})
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-
-
-async def _check_download_rate_limit(redis_client, session_id: str, vote_id: str) -> None:
-    key = f"pulsefm:rl:downloads:sess:{session_id}:poll:{vote_id}"
-    try:
-        if not await fixed_window_allow(redis_client, key, settings.vote_rl_sess_limit, settings.vote_rl_sess_window):
-            _rate_limited()
-    except Exception:
-        logger.exception("Redis rate limit failed", extra={"sessionId": session_id, "voteId": vote_id})
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-
-
 @app.post("/heartbeat")
 async def send_heartbeat(x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id")):
     if not x_session_id:
@@ -95,7 +57,6 @@ async def send_heartbeat(x_session_id: Optional[str] = Header(default=None, alia
     except Exception:
         logger.exception("Redis unavailable for heartbeat")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-    await _check_heartbeat_rate_limit(redis_client, x_session_id)
 
     db = get_firestore_client()
     heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(x_session_id)
@@ -150,8 +111,6 @@ async def submit_vote(
             logger.info("Invalid option", extra={"voteId": vote_id, "option": option})
             raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid option")
 
-        await _check_vote_rate_limits(redis_client, x_session_id, vote_id)
-
         if await has_voted_session(redis_client, vote_id, x_session_id):
             logger.info("Duplicate vote (redis)", extra={"voteId": vote_id, "sessionId": x_session_id})
             raise VoteError(status.HTTP_409_CONFLICT, "Duplicate vote")
@@ -194,7 +153,6 @@ async def create_download(
     except Exception:
         logger.exception("Redis unavailable for downloads")
         raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-    await _check_download_rate_limit(redis_client, x_session_id, vote_id)
 
     storage = get_storage_client()
     bucket = storage.bucket(settings.encoded_bucket)

@@ -5,7 +5,7 @@ FastAPI service for accepting votes and downloads with a session id header.
 ## Endpoints
 - `POST /vote` -> submits a vote (pre-checks dedupe via Redis, then enqueues)
 - `POST /downloads` -> signed URL for encoded audio
-- `POST /heartbeat` -> heartbeat (rate limited)
+- `POST /heartbeat` -> heartbeat
 - `GET /health`
 
 ## Required env vars

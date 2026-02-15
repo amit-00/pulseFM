@@ -10,14 +10,10 @@ export async function POST(request: Request) {
     const response = await voteApiFetch('/heartbeat', 'POST', sessionId);
 
     if (!response.ok) {
-      const status = response.status;
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch {
-        errorData = { error: response.statusText || 'Heartbeat failed' };
-      }
-      return NextResponse.json(errorData, { status });
+      return NextResponse.json(
+        { error: "Heartbeat request failed" },
+        { status: response.status }
+      );
     }
 
     const data = await response.json();
