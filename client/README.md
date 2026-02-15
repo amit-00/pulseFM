@@ -4,6 +4,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 - `VOTE_API_URL`: Cloud Run URL for `vote-api`.
 - `AUTH_SECRET`: Auth.js JWT signing secret (or `NEXTAUTH_SECRET`).
+- `UPSTASH_REDIS_REST_URL`: Upstash Redis REST endpoint URL.
+- `UPSTASH_REDIS_REST_TOKEN`: Upstash Redis REST auth token.
 - `CDN_SIGNING_KEY_SECRET`: Optional Secret Manager secret id/path for Cloud CDN key (default: `cdn-signed-cookie-key`).
 - `CDN_SIGNING_KEY_VALUE`: Optional fallback key value if not reading from Secret Manager.
 - `CDN_SIGNING_KEY_NAME`: Cloud CDN key name configured on backend bucket (default: `pulsefm-cdn-key`).
@@ -16,6 +18,13 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - `POST /api/session` with JSON payload `{ "name": "..." }`.
 - Auth.js credentials provider creates a stateless JWT session.
 - `proxy.ts` validates the session for all `/api/*` routes (except `/api/session` and `/api/auth/*`) and injects `X-Session-Id` from Auth.js `sub`.
+
+## Proxy rate limits
+
+- `/api/vote`: `10/min` and `60/hour` per session.
+- `/api/heartbeat`: `6/min` per session.
+- `/api/cdn-cookie`: `3/min` and `10/hour` per session.
+- Limit responses return `429` with body `{ "error": "rate_limited", "retryAfterSec": <number> }` and `Retry-After` header.
 
 ## Getting Started
 
