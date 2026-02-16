@@ -4,6 +4,13 @@ resource "google_storage_bucket" "generated_songs" {
   force_destroy = false
 
   uniform_bucket_level_access = true
+
+  cors {
+    origin          = ["http://localhost:3000", "https://pulsefm.app"]
+    method          = ["GET", "HEAD", "OPTIONS"]
+    response_header = ["Content-Type", "Content-Length", "Accept-Ranges", "Range"]
+    max_age_seconds = 3600
+  }
 }
 
 resource "google_storage_bucket" "functions_source" {

@@ -254,6 +254,12 @@ resource "google_storage_bucket_iam_member" "vote_api_bucket_viewer" {
   member = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
+resource "google_storage_bucket_iam_member" "generated_songs_public_encoded_reader" {
+  bucket = google_storage_bucket.generated_songs.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
+}
+
 resource "google_service_account_iam_member" "vote_api_sign_blobs" {
   service_account_id = google_service_account.vote_api.name
   role               = "roles/iam.serviceAccountTokenCreator"
