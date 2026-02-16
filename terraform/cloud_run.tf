@@ -85,6 +85,10 @@ resource "google_cloud_run_v2_service" "encoder" {
         value = "encoded/"
       }
       env {
+        name  = "ENCODED_CACHE_CONTROL"
+        value = "public,max-age=300,s-maxage=3600"
+      }
+      env {
         name  = "REDIS_HOST"
         value = google_redis_instance.memorystore.host
       }

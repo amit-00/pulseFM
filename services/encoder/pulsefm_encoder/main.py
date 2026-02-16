@@ -25,6 +25,7 @@ RAW_BUCKET = os.getenv("RAW_BUCKET", "pulsefm-generated-songs")
 RAW_PREFIX = os.getenv("RAW_PREFIX", "raw/")
 ENCODED_BUCKET = os.getenv("ENCODED_BUCKET", RAW_BUCKET)
 ENCODED_PREFIX = os.getenv("ENCODED_PREFIX", "encoded/")
+ENCODED_CACHE_CONTROL = os.getenv("ENCODED_CACHE_CONTROL", "public,max-age=300,s-maxage=3600")
 SONGS_COLLECTION = os.getenv("SONGS_COLLECTION", "songs")
 
 
@@ -144,6 +145,8 @@ async def handle_event(request: Request) -> Dict[str, str]:
         output_bucket = storage_client.bucket(ENCODED_BUCKET)
         output_blob_name = f"{encoded_prefix}{output_name}"
         output_blob = output_bucket.blob(output_blob_name)
+        # Encoded object names are voteId-based and immutable, so cache aggressively.
+        output_blob.cache_control = ENCODED_CACHE_CONTROL
         output_blob.upload_from_filename(
             str(output_path),
             content_type="audio/mp4",
