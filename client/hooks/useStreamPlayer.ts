@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 
 import { useAudioSlots } from "./useAudioSlots";
 import { useAudioAnalyser } from "./useAudioAnalyser";
-import { ensureSession, fetchPlaybackState } from "@/lib/stream";
+import { ensureSession, fetchPlaybackState, fetchVoteStatus } from "@/lib/stream";
 import {
   HelloEvent,
   PlaybackStateSnapshot,
@@ -103,8 +103,12 @@ export function useStreamPlayer() {
     setSnapshot(nextSnapshot);
     snapshotRef.current = nextSnapshot;
     pollVersionRef.current = nextSnapshot.poll.version;
-    setHasVoted(false);
-    setSelectedOption(null);
+
+    // Restore vote state from the session cookie so all tabs stay in sync
+    const voteStatus = await fetchVoteStatus(nextSnapshot.poll.voteId);
+    setHasVoted(voteStatus.hasVoted);
+    setSelectedOption(voteStatus.selectedOption);
+
     return nextSnapshot;
   }, []);
 

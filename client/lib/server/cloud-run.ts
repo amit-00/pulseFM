@@ -19,6 +19,11 @@ const isLocalDev = process.env.NODE_ENV === "development";
 
 let externalAccountClient: BaseExternalAccountClient | null = null;
 
+// Cache GoogleAuth + ID-token clients so local-dev requests don't
+// re-discover credentials and re-mint tokens on every call.
+let localAuth: GoogleAuth | null = null;
+const localIdTokenClients = new Map<string, Awaited<ReturnType<GoogleAuth["getIdTokenClient"]>>>();
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -63,8 +68,16 @@ function getExternalAccountClient(): BaseExternalAccountClient {
 }
 
 async function getAuthHeadersLocal(targetAudience: string): Promise<Headers> {
-  const auth = new GoogleAuth();
-  const client = await auth.getIdTokenClient(targetAudience);
+  if (!localAuth) {
+    localAuth = new GoogleAuth();
+  }
+
+  let client = localIdTokenClients.get(targetAudience);
+  if (!client) {
+    client = await localAuth.getIdTokenClient(targetAudience);
+    localIdTokenClients.set(targetAudience, client);
+  }
+
   const requestHeaders = await client.getRequestHeaders();
 
   const headers = new Headers();

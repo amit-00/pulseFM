@@ -27,3 +27,27 @@ export async function fetchPlaybackState(): Promise<PlaybackStateSnapshot> {
   }
   return response.json() as Promise<PlaybackStateSnapshot>;
 }
+
+export async function fetchVoteStatus(
+  voteId: string | null,
+): Promise<{ hasVoted: boolean; selectedOption: string | null }> {
+  if (!voteId) {
+    return { hasVoted: false, selectedOption: null };
+  }
+  try {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    if (!response.ok) {
+      return { hasVoted: false, selectedOption: null };
+    }
+    const session = (await response.json()) as {
+      lastVoteId?: string;
+      lastVoteOption?: string;
+    };
+    if (session.lastVoteId === voteId && session.lastVoteOption) {
+      return { hasVoted: true, selectedOption: session.lastVoteOption };
+    }
+  } catch {
+    // Non-fatal: fall back to no previous vote
+  }
+  return { hasVoted: false, selectedOption: null };
+}
