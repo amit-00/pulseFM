@@ -7,7 +7,7 @@ from typing import Any, Dict, Mapping
 
 import functions_framework
 import modal
-from google.cloud.firestore import Client
+import redis
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_COLLECTION = os.getenv("HEARTBEAT_COLLECTION", "heartbeat")
+HEARTBEAT_ACTIVE_KEY = "pulsefm:heartbeat:active"
 
 DESCRIPTORS = {
     "alluring": {"mood": "romantic", "genre": "rnb", "energy": "mid"},
@@ -130,8 +130,12 @@ DESCRIPTORS = {
 
 
 @lru_cache(maxsize=1)
-def _get_firestore_client() -> Client:
-    return Client()
+def _get_redis_client() -> redis.Redis:
+    host = os.getenv("REDIS_HOST", "")
+    port = int(os.getenv("REDIS_PORT", "6379"))
+    if not host:
+        raise ValueError("REDIS_HOST is required")
+    return redis.Redis(host=host, port=port, decode_responses=True)
 
 
 def _decode_pubsub_json(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -150,14 +154,11 @@ def _decode_pubsub_json(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _get_active_listeners() -> int:
-    db = _get_firestore_client()
-    doc = db.collection(HEARTBEAT_COLLECTION).document("main").get()
-    if not doc.exists:
+    client = _get_redis_client()
+    active = client.get(HEARTBEAT_ACTIVE_KEY)
+    if not active:
         return 0
-    data = doc.to_dict()
-    if not data:
-        return 0
-    return int(data.get("activeListeners", data.get("active_listeners", 0)) or 0)
+    return 1
 
 
 def _dispatch_modal_worker(vote_id: str, winner_option: str) -> None:

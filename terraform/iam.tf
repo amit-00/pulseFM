@@ -90,6 +90,12 @@ resource "google_project_iam_member" "encoder_vpc_access" {
   member  = "serviceAccount:${google_service_account.encoder.email}"
 }
 
+resource "google_project_iam_member" "modal_dispatcher_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
+}
+
 resource "google_project_iam_member" "tally_function_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
