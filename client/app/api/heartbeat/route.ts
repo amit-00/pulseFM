@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { voteApiFetch } from '@/lib/server/vote-api';
+import { heartbeatIngressFetch } from '@/lib/server/heartbeat-api';
 
 export async function POST(request: Request) {
   const sessionId = request.headers.get('x-session-id');
@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing session id' }, { status: 401 });
   }
   try {
-    const response = await voteApiFetch('/heartbeat', 'POST', sessionId);
+    const response = await heartbeatIngressFetch(sessionId);
 
     if (!response.ok) {
       return NextResponse.json(

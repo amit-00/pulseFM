@@ -6,6 +6,10 @@ output "tally_function_url" {
   value = google_cloudfunctions2_function.tally_function.service_config[0].uri
 }
 
+output "heartbeat_ingress_url" {
+  value = google_cloudfunctions2_function.heartbeat_ingress.service_config[0].uri
+}
+
 output "encoder_url" {
   value = google_cloud_run_v2_service.encoder.uri
 }

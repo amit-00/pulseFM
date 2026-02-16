@@ -3,6 +3,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 ## Runtime env vars
 
 - `VOTE_API_URL`: Cloud Run URL for `vote-api`.
+- `HEARTBEAT_INGRESS_URL`: Cloud Function Gen2 URL for heartbeat ingress.
 - `PLAYBACK_STREAM_URL`: Cloud Run URL for `playback-stream` (used by `/api/playback/state` and `/api/playback/stream` proxy routes).
 - `AUTH_SECRET`: Auth.js JWT signing secret (or `NEXTAUTH_SECRET`).
 - `GCP_PROJECT_ID`: GCP project id used for Workload Identity Federation.

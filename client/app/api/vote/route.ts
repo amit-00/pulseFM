@@ -23,9 +23,13 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     return NextResponse.json(data);
-  } catch {
+  } catch (error) {
+    console.error("Failed to send vote request", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json(
-      { error: 'Failed to send vote request' },
+      { error: "Failed to send vote request" },
       { status: 500 }
     );
   }

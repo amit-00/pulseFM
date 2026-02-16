@@ -2,6 +2,7 @@ import { getVercelOidcToken } from "@vercel/oidc";
 import {
   BaseExternalAccountClient,
   ExternalAccountClient,
+  GoogleAuth,
 } from "google-auth-library";
 
 type JsonValue = Record<string, unknown> | undefined;
@@ -13,6 +14,8 @@ type CloudRunFetchArgs = {
   body?: JsonValue;
   headers?: HeadersInit;
 };
+
+const isLocalDev = process.env.NODE_ENV === "development";
 
 let externalAccountClient: BaseExternalAccountClient | null = null;
 
@@ -48,7 +51,6 @@ function getExternalAccountClient(): BaseExternalAccountClient {
     token_url: "https://sts.googleapis.com/v1/token",
     service_account_impersonation_url:
       `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
-    credential_source: { url: "http://localhost" },
     subject_token_supplier: {
       async getSubjectToken() {
         return getVercelOidcToken();
@@ -60,7 +62,17 @@ function getExternalAccountClient(): BaseExternalAccountClient {
   return externalAccountClient;
 }
 
-async function getAuthHeaders(targetAudience: string): Promise<Headers> {
+async function getAuthHeadersLocal(targetAudience: string): Promise<Headers> {
+  const auth = new GoogleAuth();
+  const client = await auth.getIdTokenClient(targetAudience);
+  const requestHeaders = await client.getRequestHeaders();
+
+  const headers = new Headers();
+  headers.set("Authorization", requestHeaders.get("Authorization") || "");
+  return headers;
+}
+
+async function getAuthHeadersVercel(targetAudience: string): Promise<Headers> {
   const serviceAccountEmail = requireEnv("GCP_SERVICE_ACCOUNT_EMAIL");
   const accessTokenResponse = await getExternalAccountClient().getAccessToken();
   const accessToken = accessTokenResponse.token;
@@ -95,6 +107,13 @@ async function getAuthHeaders(targetAudience: string): Promise<Headers> {
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${idTokenPayload.token}`);
   return headers;
+}
+
+async function getAuthHeaders(targetAudience: string): Promise<Headers> {
+  if (isLocalDev) {
+    return getAuthHeadersLocal(targetAudience);
+  }
+  return getAuthHeadersVercel(targetAudience);
 }
 
 export async function cloudRunFetch({

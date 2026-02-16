@@ -24,6 +24,12 @@ resource "google_project_iam_member" "modal_dispatcher_firestore" {
   member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
 }
 
+resource "google_project_iam_member" "heartbeat_ingress_pubsub" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.heartbeat_ingress.email}"
+}
+
 resource "google_project_iam_member" "playback_stream_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -88,6 +94,12 @@ resource "google_project_iam_member" "tally_function_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${google_service_account.tally_function.email}"
+}
+
+resource "google_project_iam_member" "heartbeat_receiver_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.heartbeat_receiver.email}"
 }
 
 resource "google_project_iam_member" "encoder_firestore" {
@@ -158,6 +170,18 @@ resource "google_service_account_iam_member" "terraform_act_as_tally_function" {
 
 resource "google_service_account_iam_member" "terraform_act_as_modal_dispatcher" {
   service_account_id = google_service_account.modal_dispatcher.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_heartbeat_ingress" {
+  service_account_id = google_service_account.heartbeat_ingress.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_heartbeat_receiver" {
+  service_account_id = google_service_account.heartbeat_receiver.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }

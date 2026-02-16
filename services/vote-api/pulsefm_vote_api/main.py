@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, status
-from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 from google.cloud.storage import Client as StorageClient
 
 from pulsefm_tasks.client import enqueue_json_task
@@ -23,15 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PulseFM Vote API", version="1.0.0")
-_db: AsyncClient | None = None
 _storage: StorageClient | None = None
-
-
-def get_firestore_client() -> AsyncClient:
-    global _db
-    if _db is None:
-        _db = AsyncClient()
-    return _db
 
 
 def get_storage_client() -> StorageClient:
@@ -44,28 +35,6 @@ def get_storage_client() -> StorageClient:
 class VoteError(HTTPException):
     def __init__(self, status_code: int, detail: str):
         super().__init__(status_code=status_code, detail=detail)
-
-
-@app.post("/heartbeat")
-async def send_heartbeat(x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id")):
-    if not x_session_id:
-        logger.warning("Missing session id header")
-        raise VoteError(status.HTTP_400_BAD_REQUEST, "Missing session id")
-
-    try:
-        redis_client = get_redis_client()
-    except Exception:
-        logger.exception("Redis unavailable for heartbeat")
-        raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Redis unavailable")
-
-    db = get_firestore_client()
-    heartbeat_ref = db.collection(settings.firestore_heartbeats_collection).document(x_session_id)
-    await heartbeat_ref.set({
-        "sessionId": x_session_id,
-        "heartbeatAt": SERVER_TIMESTAMP,
-    })
-
-    return {"status": "ok"}
 
 @app.post("/vote")
 async def submit_vote(

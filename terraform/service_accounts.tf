@@ -13,6 +13,16 @@ resource "google_service_account" "modal_dispatcher" {
   display_name = "modal-dispatcher"
 }
 
+resource "google_service_account" "heartbeat_ingress" {
+  account_id   = "heartbeat-ingress"
+  display_name = "heartbeat-ingress"
+}
+
+resource "google_service_account" "heartbeat_receiver" {
+  account_id   = "heartbeat-receiver"
+  display_name = "heartbeat-receiver"
+}
+
 resource "google_service_account" "playback_service" {
   account_id   = "playback-service"
   display_name = "playback-service"
