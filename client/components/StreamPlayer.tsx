@@ -10,8 +10,8 @@ export function StreamPlayer() {
   return (
     <div className="flex flex-col items-center gap-6">
       {/* Hidden audio elements */}
-      <audio ref={firstSlotAudioRef} controls={false} style={{ display: "none" }} />
-      <audio ref={secondSlotAudioRef} controls={false} style={{ display: "none" }} />
+      <audio ref={firstSlotAudioRef} controls={false} crossOrigin="anonymous" style={{ display: "none" }} />
+      <audio ref={secondSlotAudioRef} controls={false} crossOrigin="anonymous" style={{ display: "none" }} />
 
       {/* Player UI */}
       <div className="flex flex-col items-center gap-4">
@@ -44,6 +44,5 @@ export function StreamPlayer() {
     </div>
   )
 }
-
 
 

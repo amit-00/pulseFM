@@ -50,8 +50,12 @@ function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["curren
 }
 
 function getAudioUrl(voteId: string): string {
-  const hostname = process.env.NEXT_PUBLIC_CDN_HOSTNAME || "cdn.pulsefm.fm";
-  return `https://${hostname}/encoded/${voteId}.m4a`;
+  const cdnBaseUrl = process.env.NEXT_PUBLIC_CDN_BASE_URL || "";
+  const bucketBaseUrl =
+    process.env.NEXT_PUBLIC_BUCKET_BASE_URL || "https://storage.googleapis.com/pulsefm-generated-songs";
+  const baseUrl = cdnBaseUrl || bucketBaseUrl;
+  const normalized = baseUrl.replace(/\/$/, "");
+  return `${normalized}/encoded/${voteId}.m4a`;
 }
 
 export function useStreamPlayer() {

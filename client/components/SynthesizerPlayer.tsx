@@ -40,8 +40,20 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
 
   return (
     <div className={cn("relative h-full w-full", className)}>
-      <audio ref={firstSlotAudioRef} controls={false} preload="auto" style={{ display: "none" }} />
-      <audio ref={secondSlotAudioRef} controls={false} preload="auto" style={{ display: "none" }} />
+      <audio
+        ref={firstSlotAudioRef}
+        controls={false}
+        preload="auto"
+        crossOrigin="anonymous"
+        style={{ display: "none" }}
+      />
+      <audio
+        ref={secondSlotAudioRef}
+        controls={false}
+        preload="auto"
+        crossOrigin="anonymous"
+        style={{ display: "none" }}
+      />
 
       <div className="absolute inset-0">
         {visualizer === "waveform" ? (

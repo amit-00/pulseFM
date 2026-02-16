@@ -13,7 +13,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`: Workload Identity Pool Provider id.
 - `UPSTASH_REDIS_REST_URL`: Upstash Redis REST endpoint URL.
 - `UPSTASH_REDIS_REST_TOKEN`: Upstash Redis REST auth token.
-- `NEXT_PUBLIC_CDN_HOSTNAME`: Public CDN hostname for direct audio playback URLs (default: `cdn.pulsefm.fm`).
+- `NEXT_PUBLIC_CDN_BASE_URL`: Preferred base URL for audio objects (for example `https://cdn.pulsefm.fm`).
+- `NEXT_PUBLIC_BUCKET_BASE_URL`: Fallback base URL when CDN URL is unset (default: `https://storage.googleapis.com/pulsefm-generated-songs`).
 
 ## Session bootstrap
 
