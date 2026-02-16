@@ -227,7 +227,7 @@ async def _update_redis_on_open(
 ) -> None:
     client = get_redis_client()
     current_ttl_seconds = max(1, int(duration_ms / 1000))
-    state_ttl_seconds = max(1, int((end_at + timedelta(days=7) - _utc_now()).total_seconds()))
+    state_ttl_seconds = max(1, int((end_at + timedelta(hours=1) - _utc_now()).total_seconds()))
 
     await init_poll_open_atomic(
         client,
