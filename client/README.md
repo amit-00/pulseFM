@@ -13,11 +13,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`: Workload Identity Pool Provider id.
 - `UPSTASH_REDIS_REST_URL`: Upstash Redis REST endpoint URL.
 - `UPSTASH_REDIS_REST_TOKEN`: Upstash Redis REST auth token.
-- `CDN_SIGNING_KEY_SECRET`: Optional Secret Manager secret id/path for Cloud CDN key (default: `cdn-signed-cookie-key`).
-- `CDN_SIGNING_KEY_VALUE`: Optional fallback key value if not reading from Secret Manager.
-- `CDN_SIGNING_KEY_NAME`: Cloud CDN key name configured on backend bucket (default: `pulsefm-cdn-key`).
-- `CDN_HOSTNAME`: CDN hostname (default: `cdn.pulsefm.fm`).
-- `CDN_URL_TTL_SEC`: Signed URL TTL in seconds (default: `900`).
+- `NEXT_PUBLIC_CDN_HOSTNAME`: Public CDN hostname for direct audio playback URLs (default: `cdn.pulsefm.fm`).
 
 ## Session bootstrap
 
@@ -31,7 +27,6 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 - `/api/vote`: `10/min` and `60/hour` per session.
 - `/api/heartbeat`: `6/min` per session.
-- `/api/cdn-url`: `3/min` and `10/hour` per session.
 - Limit responses return `429` with body `{ "error": "rate_limited", "retryAfterSec": <number> }` and `Retry-After` header.
 
 ## Getting Started

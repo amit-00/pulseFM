@@ -49,17 +49,9 @@ function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["curren
   return clampedMs / 1000;
 }
 
-async function fetchSignedUrls(voteIds: string[]): Promise<Record<string, string>> {
-  const response = await fetch("/api/cdn-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ voteIds }),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to get signed URLs");
-  }
-  const data = (await response.json()) as { urls: Record<string, string> };
-  return data.urls;
+function getAudioUrl(voteId: string): string {
+  const hostname = process.env.NEXT_PUBLIC_CDN_HOSTNAME || "cdn.pulsefm.fm";
+  return `https://${hostname}/encoded/${voteId}.m4a`;
 }
 
 export function useStreamPlayer() {
@@ -136,8 +128,6 @@ export function useStreamPlayer() {
       }
 
       const nextVoteId = nextSnapshot.nextSong.voteId;
-      const idsToSign = [currentVoteId, ...(nextVoteId ? [nextVoteId] : [])];
-      const urls = await fetchSignedUrls(idsToSign);
 
       const inactiveSlot = getInactiveSlot(activeSlot);
       const newActiveRef = getActiveAudioRef(inactiveSlot);
@@ -145,7 +135,7 @@ export function useStreamPlayer() {
       const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
 
       if (newActiveRef.current) {
-        newActiveRef.current.src = urls[currentVoteId];
+        newActiveRef.current.src = getAudioUrl(currentVoteId);
         newActiveRef.current.currentTime = startOffsetSec;
         newActiveRef.current.volume = volume;
         await newActiveRef.current.play();
@@ -155,8 +145,8 @@ export function useStreamPlayer() {
         oldActiveRef.current.pause();
       }
 
-      if (nextVoteId && urls[nextVoteId]) {
-        loadTrackToSlot(activeSlot, urls[nextVoteId]);
+      if (nextVoteId) {
+        loadTrackToSlot(activeSlot, getAudioUrl(nextVoteId));
       } else {
         const inactiveRef = getInactiveAudioRef(inactiveSlot);
         if (inactiveRef.current) {
@@ -287,20 +277,18 @@ export function useStreamPlayer() {
       connectAudioElements();
 
       const nextVoteId = currentSnapshot.nextSong.voteId;
-      const idsToSign = [currentVoteId, ...(nextVoteId ? [nextVoteId] : [])];
-      const urls = await fetchSignedUrls(idsToSign);
 
       const startTimeSeconds = computePlaybackOffsetSeconds(currentSnapshot.currentSong);
       if (activeAudioRef.current) {
-        activeAudioRef.current.src = urls[currentVoteId];
+        activeAudioRef.current.src = getAudioUrl(currentVoteId);
         activeAudioRef.current.currentTime = startTimeSeconds;
         activeAudioRef.current.volume = volume;
         await activeAudioRef.current.play();
       }
 
-      if (nextVoteId && urls[nextVoteId]) {
+      if (nextVoteId) {
         const inactiveSlot = getInactiveSlot(activeSlot);
-        loadTrackToSlot(inactiveSlot, urls[nextVoteId]);
+        loadTrackToSlot(inactiveSlot, getAudioUrl(nextVoteId));
       }
 
       sourceReady.current = true;

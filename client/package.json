@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@google-cloud/secret-manager": "^6.1.0",
     "@upstash/redis": "^1.35.3",
     "@vercel/oidc": "^3.0.0",
     "axios": "^1.13.2",

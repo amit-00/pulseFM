@@ -23,13 +23,6 @@ const RATE_RULES: Array<{ path: string; rules: RateRule[] }> = [
     path: "/api/heartbeat",
     rules: [{ key: "heartbeat:min", limit: 6, windowSec: 60 }],
   },
-  {
-    path: "/api/cdn-url",
-    rules: [
-      { key: "cdn-url:min", limit: 3, windowSec: 60 },
-      { key: "cdn-url:hour", limit: 10, windowSec: 3600 },
-    ],
-  },
 ];
 
 function getRulesForPath(pathname: string): RateRule[] {
