@@ -75,9 +75,13 @@ export async function proxy(request: NextRequest) {
   }
 
   const token = await getToken({ req: request, secret });
+  if (!token) {
+    return NextResponse.json({ error: "auth_missing_token", message: "Authorization token is required" }, { status: 401 });
+  }
+
   const sessionId = typeof token?.sub === "string" ? token.sub : null;
   if (!sessionId) {
-    return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+    return NextResponse.json({ error: "auth_invalid_session", message: "Invalid session" }, { status: 401 });
   }
 
   try {
