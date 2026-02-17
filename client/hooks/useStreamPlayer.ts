@@ -58,6 +58,11 @@ function getAudioUrl(voteId: string): string {
   return `${normalized}/encoded/${voteId}.m4a`;
 }
 
+const SONG_CHANGE_RETRY_ATTEMPTS = 2;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+const RECONNECT_JITTER_MS = 250;
+
 export function useStreamPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSlot, setActiveSlot] = useState<Slot>("first");
@@ -73,8 +78,14 @@ export function useStreamPlayer() {
   const sourceReady = useRef(false);
   const streamRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
   const snapshotRef = useRef<PlaybackStateSnapshot | null>(null);
   const pollVersionRef = useRef<number | null>(null);
+  const isPlayingRef = useRef(false);
+  const activeSlotRef = useRef<Slot>("first");
+  const volumeRef = useRef(1);
+  const queuedSongChangedRef = useRef<SongChangedEvent | null>(null);
+  const songChangedInFlightRef = useRef(false);
 
   const {
     firstSlotAudioRef,
@@ -121,7 +132,7 @@ export function useStreamPlayer() {
 
   const applySongChangeover = useCallback(
     async (nextSnapshot: PlaybackStateSnapshot) => {
-      if (!isPlaying) {
+      if (!isPlayingRef.current) {
         sourceReady.current = false;
         return;
       }
@@ -133,15 +144,16 @@ export function useStreamPlayer() {
 
       const nextVoteId = nextSnapshot.nextSong.voteId;
 
-      const inactiveSlot = getInactiveSlot(activeSlot);
+      const activeSlotValue = activeSlotRef.current;
+      const inactiveSlot = getInactiveSlot(activeSlotValue);
       const newActiveRef = getActiveAudioRef(inactiveSlot);
-      const oldActiveRef = getActiveAudioRef(activeSlot);
+      const oldActiveRef = getActiveAudioRef(activeSlotValue);
       const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
 
       if (newActiveRef.current) {
         newActiveRef.current.src = getAudioUrl(currentVoteId);
         newActiveRef.current.currentTime = startOffsetSec;
-        newActiveRef.current.volume = volume;
+        newActiveRef.current.volume = volumeRef.current;
         await newActiveRef.current.play();
       }
 
@@ -150,7 +162,7 @@ export function useStreamPlayer() {
       }
 
       if (nextVoteId) {
-        loadTrackToSlot(activeSlot, getAudioUrl(nextVoteId));
+        loadTrackToSlot(activeSlotValue, getAudioUrl(nextVoteId));
       } else {
         const inactiveRef = getInactiveAudioRef(inactiveSlot);
         if (inactiveRef.current) {
@@ -158,25 +170,78 @@ export function useStreamPlayer() {
         }
       }
 
+      activeSlotRef.current = inactiveSlot;
       setActiveSlot(inactiveSlot);
       startAnalysing();
     },
     [
-      activeSlot,
       getActiveAudioRef,
       getInactiveAudioRef,
       getInactiveSlot,
-      isPlaying,
       loadTrackToSlot,
       startAnalysing,
-      volume,
     ],
   );
 
+  const processSongChangedEvent = useCallback(
+    async (data: SongChangedEvent) => {
+      if (pollVersionRef.current !== null && data.version !== null && data.version <= pollVersionRef.current) {
+        return;
+      }
+
+      let attempt = 0;
+      while (attempt < SONG_CHANGE_RETRY_ATTEMPTS) {
+        try {
+          const nextSnapshot = await refreshState();
+          await applySongChangeover(nextSnapshot);
+          setStreamError(null);
+          return;
+        } catch (error) {
+          attempt += 1;
+          if (attempt >= SONG_CHANGE_RETRY_ATTEMPTS) {
+            throw error;
+          }
+        }
+      }
+    },
+    [applySongChangeover, refreshState],
+  );
+
+  const flushSongChangedQueue = useCallback(async () => {
+    if (songChangedInFlightRef.current) {
+      return;
+    }
+    songChangedInFlightRef.current = true;
+
+    try {
+      while (queuedSongChangedRef.current) {
+        const event = queuedSongChangedRef.current;
+        queuedSongChangedRef.current = null;
+        await processSongChangedEvent(event);
+      }
+    } catch {
+      setStreamError("Failed to apply song changeover");
+    } finally {
+      songChangedInFlightRef.current = false;
+      if (queuedSongChangedRef.current) {
+        void flushSongChangedQueue();
+      }
+    }
+  }, [processSongChangedEvent]);
+
   const connectStream = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     streamRef.current?.close();
     const es = new EventSource("/api/playback/stream");
     streamRef.current = es;
+
+    es.onopen = () => {
+      reconnectAttemptRef.current = 0;
+      setStreamError(null);
+    };
 
     es.addEventListener("HELLO", (event: MessageEvent<string>) => {
       try {
@@ -232,11 +297,18 @@ export function useStreamPlayer() {
     es.addEventListener("SONG_CHANGED", async (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data) as SongChangedEvent;
-        if (pollVersionRef.current !== null && data.version === pollVersionRef.current) {
+        const queuedVersion = queuedSongChangedRef.current?.version;
+        if (
+          queuedVersion !== null &&
+          queuedVersion !== undefined &&
+          data.version !== null &&
+          data.version !== undefined &&
+          data.version < queuedVersion
+        ) {
           return;
         }
-        const nextSnapshot = await refreshState();
-        await applySongChangeover(nextSnapshot);
+        queuedSongChangedRef.current = data;
+        await flushSongChangedQueue();
       } catch {
         setStreamError("Failed to apply song changeover");
       }
@@ -248,6 +320,11 @@ export function useStreamPlayer() {
       if (reconnectTimerRef.current !== null) {
         window.clearTimeout(reconnectTimerRef.current);
       }
+      const attempt = reconnectAttemptRef.current;
+      const baseDelay = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** attempt);
+      const jitter = Math.floor(Math.random() * RECONNECT_JITTER_MS);
+      const delayMs = Math.min(RECONNECT_MAX_DELAY_MS, baseDelay + jitter);
+      reconnectAttemptRef.current = Math.min(reconnectAttemptRef.current + 1, 10);
       reconnectTimerRef.current = window.setTimeout(async () => {
         try {
           await refreshState();
@@ -255,15 +332,16 @@ export function useStreamPlayer() {
           // keep stream reconnect loop alive even when state fetch fails
         }
         connectStream();
-      }, 1000);
+      }, delayMs);
     };
-  }, [applySongChangeover, refreshState]);
+  }, [flushSongChangedQueue, refreshState]);
 
   const handlePlayPause = useCallback(async () => {
     const activeAudioRef = getActiveAudioRef(activeSlot);
 
     if (isPlaying) {
       activeAudioRef.current?.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
       stopAnalysing();
       return;
@@ -296,6 +374,7 @@ export function useStreamPlayer() {
       }
 
       sourceReady.current = true;
+      isPlayingRef.current = true;
       setIsPlaying(true);
       startAnalysing();
     } catch {
@@ -367,6 +446,18 @@ export function useStreamPlayer() {
   }, [connectStream, refreshState]);
 
   useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    activeSlotRef.current = activeSlot;
+  }, [activeSlot]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       const endAt = snapshotRef.current?.currentSong.endAt;
       if (!endAt) {
@@ -381,20 +472,29 @@ export function useStreamPlayer() {
   }, []);
 
   useEffect(() => {
-    const firstAudio = firstSlotAudioRef.current;
-    const secondAudio = secondSlotAudioRef.current;
-    const onEnded = () => {
+    // Playback continuity is stream-driven (SONG_CHANGED + snapshot refresh),
+    // so natural track endings should not force a local playback stop.
+    const onMediaError = () => {
+      const activeAudio = getActiveAudioRef(activeSlotRef.current).current;
+      if (!activeAudio?.error) {
+        return;
+      }
+      activeAudio.pause();
+      isPlayingRef.current = false;
       setIsPlaying(false);
       stopAnalysing();
+      setStreamError("Playback stopped due to unrecoverable media error");
     };
 
-    firstAudio?.addEventListener("ended", onEnded);
-    secondAudio?.addEventListener("ended", onEnded);
+    const firstAudio = firstSlotAudioRef.current;
+    const secondAudio = secondSlotAudioRef.current;
+    firstAudio?.addEventListener("error", onMediaError);
+    secondAudio?.addEventListener("error", onMediaError);
     return () => {
-      firstAudio?.removeEventListener("ended", onEnded);
-      secondAudio?.removeEventListener("ended", onEnded);
+      firstAudio?.removeEventListener("error", onMediaError);
+      secondAudio?.removeEventListener("error", onMediaError);
     };
-  }, [firstSlotAudioRef, secondSlotAudioRef, stopAnalysing]);
+  }, [firstSlotAudioRef, secondSlotAudioRef, getActiveAudioRef, stopAnalysing]);
 
   useEffect(() => {
     const allRefs = [firstSlotAudioRef.current, secondSlotAudioRef.current];
