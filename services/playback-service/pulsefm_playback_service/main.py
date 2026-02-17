@@ -14,6 +14,7 @@ from pulsefm_redis.client import (
     get_poll_tallies,
     get_redis_client,
     init_poll_open_atomic,
+    set_playback_poll_status,
 )
 from pulsefm_tasks.client import enqueue_json_task_with_delay
 
@@ -26,12 +27,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_STARTUP_DELAY_SECONDS = 30
+VOTE_CLOSE_LEAD_SECONDS = 40
 
 
 def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
     suffix = vote_id or ""
     timestamp = str(int(ends_at.timestamp())) if ends_at else ""
     return f"playback-{suffix}-{timestamp}"
+
+
+def _build_vote_close_task_id(vote_id: str, version: int) -> str:
+    return f"vote-close-{vote_id}-{version}"
 
 
 async def _get_station_state(db) -> Dict[str, Any] | None:
@@ -212,9 +218,40 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
 
     await db.collection(settings.vote_windows_collection).document(vote_id).set(window_doc)
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
+
+    try:
+        await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED")
+    except Exception as exc:
+        logger.exception("Failed to update playback snapshot poll status on close", extra={"voteId": vote_id})
+        raise exc
+
     logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
     _publish_vote_event("CLOSE", vote_id, winner_option)
     return window_doc
+
+
+async def _close_current_vote_if_matches(
+    db: AsyncClient,
+    expected_vote_id: str | None = None,
+    expected_version: int | None = None,
+) -> Dict[str, Any]:
+    state = await _get_current_state(db)
+    if not state:
+        return {"action": "noop", "reason": "missing_state"}
+
+    current_vote_id = state.get("voteId")
+    current_version = int(state.get("version") or 0)
+    current_status = state.get("status")
+
+    if expected_vote_id is not None and current_vote_id != expected_vote_id:
+        return {"action": "noop", "reason": "vote_mismatch", "voteId": current_vote_id, "version": current_version}
+    if expected_version is not None and current_version != expected_version:
+        return {"action": "noop", "reason": "version_mismatch", "voteId": current_vote_id, "version": current_version}
+    if current_status != "OPEN":
+        return {"action": "noop", "reason": "already_closed", "voteId": current_vote_id, "version": current_version}
+
+    await _close_vote(db, state)
+    return {"action": "closed", "voteId": current_vote_id, "version": current_version}
 
 
 async def _update_redis_on_open(
@@ -253,16 +290,28 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
     return window_doc
 
 
-async def _rotate_vote(db: AsyncClient, duration_ms: int) -> Dict[str, Any]:
-    state = await _get_current_state(db)
-    if state and state.get("status") == "OPEN":
-        window = await _close_vote(db, state)
-        version = int(state.get("version") or 0) + 1
-    else:
-        version = int(state.get("version") or 0) + 1 if state else 1
+@app.post("/vote/close")
+async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
+    vote_id = payload.get("voteId")
+    version_raw = payload.get("version")
+    if not isinstance(vote_id, str) or not vote_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
+    if version_raw is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version is required")
+    try:
+        version = int(version_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be an integer")
 
-    window = await _open_next_vote(db, version, duration_ms)
-    return window
+    db = get_firestore_client()
+    try:
+        result = await _close_current_vote_if_matches(db, expected_vote_id=vote_id, expected_version=version)
+    except Exception:
+        logger.exception("Failed to close vote", extra={"voteId": vote_id, "version": version})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to close vote")
+
+    logger.info("Close vote request handled", extra={"voteId": vote_id, "version": version, "action": result["action"]})
+    return {"status": "ok", **result}
 
 
 @app.post("/tick")
@@ -329,8 +378,15 @@ async def tick() -> Dict[str, str]:
         logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
+    duration_ms = int(result["durationMs"])
     try:
-        window = await _rotate_vote(db, int(result["durationMs"]))
+        state = await _get_current_state(db)
+        if state and state.get("status") == "OPEN":
+            await _close_vote(db, state)
+            version = int(state.get("version") or 0) + 1
+        else:
+            version = int(state.get("version") or 0) + 1 if state else 1
+        window = await _open_next_vote(db, version, duration_ms)
     except Exception:
         logger.exception("Failed to rotate vote")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rotate vote")
@@ -357,13 +413,14 @@ async def tick() -> Dict[str, str]:
                 "voteId": window.get("voteId"),
                 "options": window.get("options"),
                 "version": window.get("version"),
+                "status": "OPEN",
             },
         }
         await _update_redis_on_open(
             window["voteId"],
             window["startAt"],
             window["endAt"],
-            current_duration_ms,
+            duration_ms,
             window["options"],
             snapshot,
         )
@@ -386,11 +443,34 @@ async def tick() -> Dict[str, str]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
 
     playback_tick_url = settings.playback_tick_url.rstrip("/") + "/tick"
-    duration_ms = result.get("durationMs")
+    duration_ms_value = result.get("durationMs")
     try:
-        delay_seconds = int(duration_ms) / 1000 if duration_ms else 30
+        delay_seconds = int(duration_ms_value) / 1000 if duration_ms_value else 30
     except (TypeError, ValueError):
         delay_seconds = 30
+
+    vote_close_url = settings.playback_tick_url.rstrip("/") + "/vote/close"
+    close_delay_seconds = max(0, int(delay_seconds) - VOTE_CLOSE_LEAD_SECONDS)
+    close_vote_id = window.get("voteId")
+    close_version = int(window.get("version") or 0)
+    close_task_id = _build_vote_close_task_id(str(close_vote_id), close_version)
+    
+    enqueue_json_task_with_delay(
+        settings.playback_queue,
+        vote_close_url,
+        {"voteId": close_vote_id, "version": close_version},
+        close_delay_seconds,
+        task_id=close_task_id,
+        ignore_already_exists=True,
+    )
+    logger.info(
+        "Scheduled vote close",
+        extra={
+            "voteId": close_vote_id,
+            "version": close_version,
+            "delaySeconds": close_delay_seconds,
+        },
+    )
 
     task_id = _build_tick_task_id(result.get("voteId"), result.get("endsAt"))
     enqueue_json_task_with_delay(

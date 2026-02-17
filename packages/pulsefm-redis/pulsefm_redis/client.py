@@ -41,6 +41,34 @@ async def get_playback_current_snapshot(client: redis.Redis) -> dict | None:
         return None
 
 
+async def set_playback_poll_status(
+    client: redis.Redis,
+    vote_id: str,
+    status: str,
+) -> None:
+    snapshot = await get_playback_current_snapshot(client)
+    if not snapshot:
+        raise ValueError("playback current snapshot missing")
+
+    poll = snapshot.get("poll")
+    if not isinstance(poll, dict):
+        raise ValueError("playback current snapshot missing poll")
+
+    current_vote_id = poll.get("voteId")
+    if current_vote_id != vote_id:
+        raise ValueError("playback current snapshot voteId mismatch")
+
+    poll["status"] = status
+    snapshot["poll"] = poll
+
+    ttl = await client.ttl(playback_current_key())  # type: ignore[misc]
+    payload = json.dumps(snapshot, separators=(",", ":"))
+    if ttl and int(ttl) > 0:
+        await client.set(playback_current_key(), payload, ex=int(ttl))
+    else:
+        await client.set(playback_current_key(), payload)
+
+
 async def init_poll_tally(client: redis.Redis, vote_id: str, options: list[str], ttl_seconds: int) -> None:
     key = poll_tally_key(vote_id)
     mapping = {option: 0 for option in options}

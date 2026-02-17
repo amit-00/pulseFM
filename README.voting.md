@@ -45,7 +45,7 @@ History document per window:
 
 ### Redis keys (canonical tally + dedupe)
 
-- `pulsefm:playback:current` -> JSON snapshot of current song + next song + poll
+- `pulsefm:playback:current` -> JSON snapshot of current song + next song + poll (`poll.status` is `OPEN|CLOSED`)
 - `pulsefm:poll:{voteId}:tally` -> HASH: `option` => count
 - `pulsefm:poll:{voteId}:voted` -> SET of sessionIds
 
@@ -103,7 +103,7 @@ Queues:
 
 ### playback-stream
 - `GET /state` returns the current state snapshot
-- `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, SONG_CHANGED, HEARTBEAT)
+- `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, SONG_CHANGED, VOTE_CLOSED, HEARTBEAT)
 
 ### modal-dispatcher
 - Pub/Sub triggered (CLOSE events) to dispatch the Modal worker when listeners are active
@@ -117,7 +117,7 @@ Topics:
 
 Consumers:
 - `modal-dispatcher` (CLOSE events from `vote-events`)
-- `playback-stream` (tally and playback events)
+- `playback-stream` (tally, playback, and vote-events)
 
 Message payload:
 ```json

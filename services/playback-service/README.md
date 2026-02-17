@@ -4,6 +4,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 
 ## Endpoint
 - `POST /tick`
+- `POST /vote/close`
 - `GET /health`
 
 ## Required env vars
@@ -26,9 +27,12 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 
 ## Behavior
 - Updates station playback and marks songs played.
-- Closes any open vote and opens a new one.
+- `POST /vote/close` only closes the current vote when both `voteId` and `version` match `voteState/current`.
+- `POST /tick` closes current vote only when it is open, then opens a new vote.
+- Maintains poll lifecycle state in Redis `pulsefm:playback:current` via `poll.status` (`OPEN`/`CLOSED`).
 - Publishes vote OPEN/CLOSE events and playback CHANGEOVER.
 - Schedules the next tick based on the current song duration.
+- Schedules a delayed vote-close task 40 seconds before the next tick (or immediately for songs shorter than 40 seconds).
 
 ## Run locally
 ```

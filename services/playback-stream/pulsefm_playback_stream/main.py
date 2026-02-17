@@ -24,6 +24,7 @@ _db: AsyncClient | None = None
 
 _dirty_vote_id: str | None = None
 _last_invalidated: Dict[str, Any] | None = None
+_last_vote_closed: Dict[str, Any] | None = None
 
 
 def _utc_ms() -> int:
@@ -102,6 +103,7 @@ async def _build_state_snapshot(db: AsyncClient) -> Dict[str, Any]:
             "voteId": vote_state.get("voteId") if vote_state else None,
             "options": vote_state.get("options") if vote_state else [],
             "version": vote_state.get("version") if vote_state else None,
+            "status": vote_state.get("status") if vote_state else None,
         },
         "ts": _utc_ms(),
     }
@@ -190,6 +192,15 @@ def _invalidate_state(vote_id: str | None, version: Any) -> None:
     }
 
 
+def _record_vote_closed(vote_id: str | None, winner_option: str | None) -> None:
+    global _last_vote_closed
+    _last_vote_closed = {
+        "voteId": vote_id,
+        "winnerOption": winner_option,
+        "ts": _utc_ms(),
+    }
+
+
 @app.post("/events/tally")
 async def tally_event(payload: Dict[str, Any]) -> Dict[str, str]:
     message = decode_pubsub_json(payload)
@@ -231,6 +242,19 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/events/vote")
+async def vote_event(payload: Dict[str, Any]) -> Dict[str, str]:
+    message = decode_pubsub_json(payload)
+    if message.get("event") != "CLOSE":
+        return {"status": "ignored"}
+
+    vote_id = message.get("voteId")
+    winner_option = message.get("winnerOption")
+    _record_vote_closed(vote_id, winner_option)
+    logger.info("Recorded vote close event", extra={"voteId": vote_id, "winnerOption": winner_option})
+    return {"status": "ok"}
+
+
 async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     try:
         redis_client = get_redis_client()
@@ -264,8 +288,10 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     now_loop = asyncio.get_event_loop().time()
     connected_at_ms = _utc_ms()
     last_known_invalidation_ts = int((_last_invalidated or {}).get("ts", 0))
+    last_known_vote_closed_ts = int((_last_vote_closed or {}).get("ts", 0))
     # Only emit SONG_CHANGED for invalidations that happen after this client connects.
     last_invalidated_at = max(connected_at_ms, last_known_invalidation_ts)
+    last_vote_closed_at = max(connected_at_ms, last_known_vote_closed_ts)
 
     last_snapshot_at = now_loop
     last_delta_at = 0.0
@@ -289,6 +315,10 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
             last_tallies = {}
             last_snapshot_at = 0.0
             last_delta_at = 0.0
+
+        if _last_vote_closed and _last_vote_closed.get("ts", 0) > last_vote_closed_at:
+            yield _format_sse("VOTE_CLOSED", _last_vote_closed)
+            last_vote_closed_at = _last_vote_closed.get("ts", 0)
 
         if now - last_snapshot_at >= settings.tally_snapshot_interval_sec:
             tallies = await _get_tallies(redis_client, vote_id)
