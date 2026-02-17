@@ -280,9 +280,9 @@ export function useStreamPlayer() {
           }
           const nextTallies = { ...prev.poll.tallies };
           for (const [option, delta] of Object.entries(data.delta || {})) {
-            const deltaReduction = option === selectedOption && hasVoted ? 1 : 0;
-            nextTallies[option] = Math.max(0, (nextTallies[option] || 0) + Number(delta || 0) - deltaReduction);
+            nextTallies[option] = Math.max(0, (nextTallies[option] || 0) + Number(delta || 0));
           }
+
           const next = {
             ...prev,
             poll: { ...prev.poll, tallies: nextTallies },
@@ -395,17 +395,6 @@ export function useStreamPlayer() {
     volume,
   ]);
 
-  const updateTallies = useCallback((voteId: string, optionKey: string, delta: number) => {
-    setSnapshot((prev) => {
-      if (!prev || prev.poll.voteId !== voteId) return prev;
-      const nextTallies = { ...prev.poll.tallies };
-      nextTallies[optionKey] = Math.max(0, (nextTallies[optionKey] || 0) + delta);
-      const next = { ...prev, poll: { ...prev.poll, tallies: nextTallies } };
-      snapshotRef.current = next;
-      return next;
-    });
-  }, []);
-
   const submitVote = useCallback(async (optionKey: string) => {
     const voteId = snapshotRef.current?.poll.voteId;
     if (!voteId || isSubmittingVote) return;
@@ -415,7 +404,6 @@ export function useStreamPlayer() {
 
     setHasVoted(true);
     setSelectedOption(optionKey);
-    updateTallies(voteId, optionKey, 1);
 
     try {
       const response = await fetch("/api/vote", {
@@ -427,12 +415,9 @@ export function useStreamPlayer() {
         const data = await response.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error || "Vote failed");
       }
-      setHasVoted(true);
-      setSelectedOption(optionKey);
     } catch (error) {
       setHasVoted(false);
       setSelectedOption(null);
-      updateTallies(voteId, optionKey, -1);
 
       const message = error instanceof Error ? error.message : "Vote failed";
       setVoteError(message);

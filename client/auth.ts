@@ -21,32 +21,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
   },
+
   providers: [
     Credentials({
       name: "Anonymous",
-      credentials: {
-        name: { label: "Name", type: "text" },
-      },
-      authorize(credentials) {
-        const name = typeof credentials?.name === "string" ? credentials.name.trim() : "";
-        if (!name) {
-          return null;
-        }
-        return {
-          id: randomUUID(),
-          name,
-        };
+      credentials: {},
+      authorize() {
+        return { id: randomUUID() };
       },
     }),
   ],
+
   callbacks: {
-    jwt({ token, user, trigger, session }) {
-      if (user?.id) {
-        token.sub = user.id;
-      }
-      if (user?.name) {
-        token.name = user.name;
-      }
+    jwt({ token, trigger, session }) {
       // Persist vote state when the session is updated via unstable_update
       if (trigger === "update" && session) {
         if (typeof session.lastVoteId === "string") {
@@ -59,9 +46,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return token;
     },
     session({ session, token }) {
-      if (session.user) {
-        session.user.name = typeof token.name === "string" ? token.name : session.user.name;
-      }
       if (token.lastVoteId) {
         session.lastVoteId = token.lastVoteId;
       }
