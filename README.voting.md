@@ -93,7 +93,7 @@ Queues:
 ## Service responsibilities
 
 ### vote-api
-- `POST /vote` requires `X-Session-Id`, pre-checks dedupe, and enqueues a Cloud Task
+- `POST /vote` requires `X-Session-Id`, rejects non-OPEN polls, pre-checks dedupe, and enqueues a Cloud Task
 
 ### tally-function
 - HTTP function that handles Cloud Tasks and performs the atomic Redis vote operation idempotently

@@ -16,6 +16,7 @@ export interface PollState {
   voteId: string | null;
   options: string[];
   version: number | null;
+  status?: "OPEN" | "CLOSED" | null;
   tallies: PollTallies;
 }
 
@@ -49,4 +50,10 @@ export interface SongChangedEvent {
   voteId: string | null;
   ts: number;
   version: number | null;
+}
+
+export interface VoteClosedEvent {
+  voteId: string | null;
+  winnerOption?: string | null;
+  ts: number;
 }

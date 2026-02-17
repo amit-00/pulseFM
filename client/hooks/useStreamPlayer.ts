@@ -9,6 +9,7 @@ import {
   SongChangedEvent,
   TallyDeltaEvent,
   TallySnapshotEvent,
+  VoteClosedEvent,
 } from "@/lib/types";
 
 type Slot = "first" | "second";
@@ -18,16 +19,18 @@ type VoteView = {
   options: Record<string, string>;
   tallies: Record<string, number>;
   endTime: number;
+  status: "OPEN" | "CLOSED" | null;
 };
 
 function toVoteView(snapshot: PlaybackStateSnapshot | null): VoteView {
-  const poll = snapshot?.poll ?? { voteId: null, options: [], tallies: {}, version: null };
+  const poll = snapshot?.poll ?? { voteId: null, options: [], tallies: {}, version: null, status: null };
   const options = Object.fromEntries(poll.options.map((option) => [option, option]));
   return {
     voteId: poll.voteId,
     options,
     tallies: poll.tallies || {},
     endTime: snapshot?.currentSong?.endAt ?? Date.now(),
+    status: poll.status ?? null,
   };
 }
 
@@ -315,6 +318,25 @@ export function useStreamPlayer() {
       }
     });
 
+    es.addEventListener("VOTE_CLOSED", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as VoteClosedEvent;
+        setSnapshot((prev) => {
+          if (!prev || prev.poll.voteId !== data.voteId) {
+            return prev;
+          }
+          const next = {
+            ...prev,
+            poll: { ...prev.poll, status: "CLOSED" as const },
+          };
+          snapshotRef.current = next;
+          return next;
+        });
+      } catch {
+        setStreamError("Invalid VOTE_CLOSED payload");
+      }
+    });
+
     es.onerror = () => {
       es.close();
       streamRef.current = null;
@@ -512,7 +534,7 @@ export function useStreamPlayer() {
   }, [firstSlotAudioRef, secondSlotAudioRef, volume]);
 
   const voteData = useMemo(() => toVoteView(snapshot), [snapshot]);
-  const isExpired = timeRemaining <= 0;
+  const isExpired = timeRemaining <= 0 || voteData.status === "CLOSED";
   const formattedTime = useMemo(() => formatTime(timeRemaining), [timeRemaining]);
 
   return {

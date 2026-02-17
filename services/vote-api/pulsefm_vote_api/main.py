@@ -65,12 +65,16 @@ async def submit_vote(
             logger.warning("No playback snapshot in redis")
             raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
         current_vote = (snapshot.get("poll") or {}).get("voteId")
+        current_status = (snapshot.get("poll") or {}).get("status")
         if not current_vote:
             logger.warning("No current poll in playback snapshot")
             raise VoteError(status.HTTP_500_INTERNAL_SERVER_ERROR, "Vote state unavailable")
         if current_vote != vote_id:
             logger.info("VoteId mismatch", extra={"requested": vote_id, "current": current_vote})
             raise VoteError(status.HTTP_400_BAD_REQUEST, "Invalid voteId")
+        if current_status != "OPEN":
+            logger.info("Vote rejected because poll is closed", extra={"voteId": vote_id, "status": current_status})
+            raise VoteError(status.HTTP_409_CONFLICT, "Vote closed")
 
         options = await redis_client.hkeys(poll_tally_key(vote_id)) # type: ignore[misc]
         if not options:
