@@ -26,23 +26,6 @@ Pointer document read by all services:
 }
 ```
 
-### `voteWindows` (doc: `{voteId}`)
-History document per window:
-
-```json
-{
-  "voteId": "string",
-  "status": "OPEN | CLOSED",
-  "startAt": "timestamp",
-  "endAt": "timestamp",
-  "options": ["string"],
-  "winnerOption": "string (set on close)",
-  "version": "number",
-  "createdAt": "timestamp",
-  "closedAt": "timestamp"
-}
-```
-
 ### Redis keys (canonical tally + dedupe)
 
 - `pulsefm:playback:current` -> JSON snapshot of current song + next song + poll (`poll.status` is `OPEN|CLOSED`)
@@ -100,6 +83,7 @@ Queues:
 
 ### playback-service
 - `POST /tick` advances station playback, closes/open votes, publishes vote events, and schedules the next playback tick
+- Poll `endAt` is aligned to vote-close trigger time (40 seconds before next tick when possible), independent of song `endAt`
 
 ### playback-stream
 - `GET /state` returns the current state snapshot

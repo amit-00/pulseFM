@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="PulseFM Playback Stream", version="1.0.0")
 _db: AsyncClient | None = None
 
-_dirty_vote_id: str | None = None
 _last_invalidated: Dict[str, Any] | None = None
 _last_vote_closed: Dict[str, Any] | None = None
+_tally_cache: Dict[str, Dict[str, Any]] = {}
+_tally_cache_lock = asyncio.Lock()
+TALLY_CACHE_STALENESS_MS = 500
 
 
 def _utc_ms() -> int:
@@ -151,6 +153,44 @@ async def _get_tallies(redis_client, vote_id: str | None) -> Dict[str, int]:
     return tallies
 
 
+def _mark_tally_cache_dirty(vote_id: str | None) -> None:
+    if not vote_id:
+        return
+    entry = _tally_cache.get(vote_id)
+    if entry is None:
+        _tally_cache[vote_id] = {"tallies": {}, "fetched_at_ms": 0, "dirty": True}
+        return
+    entry["dirty"] = True
+
+
+async def _get_tallies_cached(redis_client, vote_id: str | None) -> Dict[str, int]:
+    if not vote_id:
+        return {}
+
+    now_ms = _utc_ms()
+    entry = _tally_cache.get(vote_id)
+    is_stale = entry is None or (now_ms - int(entry.get("fetched_at_ms", 0))) >= TALLY_CACHE_STALENESS_MS
+    needs_refresh = is_stale or bool(entry and entry.get("dirty"))
+    if not needs_refresh and entry is not None:
+        return dict(entry.get("tallies", {}))
+
+    async with _tally_cache_lock:
+        now_ms = _utc_ms()
+        entry = _tally_cache.get(vote_id)
+        is_stale = entry is None or (now_ms - int(entry.get("fetched_at_ms", 0))) >= TALLY_CACHE_STALENESS_MS
+        needs_refresh = is_stale or bool(entry and entry.get("dirty"))
+        if not needs_refresh and entry is not None:
+            return dict(entry.get("tallies", {}))
+
+        tallies = await _get_tallies(redis_client, vote_id)
+        _tally_cache[vote_id] = {
+            "tallies": tallies,
+            "fetched_at_ms": _utc_ms(),
+            "dirty": False,
+        }
+        return dict(tallies)
+
+
 @app.get("/state")
 async def state() -> Dict[str, Any]:
     db = get_firestore_client()
@@ -163,7 +203,7 @@ async def state() -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
 
     try:
-        tallies = await _get_tallies(redis_client, vote_id)
+        tallies = await _get_tallies_cached(redis_client, vote_id)
     except Exception:
         logger.exception("Redis read failed for state", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read tallies")
@@ -176,16 +216,7 @@ async def state() -> Dict[str, Any]:
 
 
 def _mark_dirty(vote_id: str) -> None:
-    global _dirty_vote_id
-    _dirty_vote_id = vote_id
-
-
-def _consume_dirty(vote_id: str | None) -> bool:
-    global _dirty_vote_id
-    if vote_id and _dirty_vote_id == vote_id:
-        _dirty_vote_id = None
-        return True
-    return False
+    _mark_tally_cache_dirty(vote_id)
 
 
 def _invalidate_state(vote_id: str | None, version: Any) -> None:
@@ -248,6 +279,7 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     _snapshot_cache.expires_at_ms = 0
     snapshot = await _get_state_snapshot(db)
     poll = snapshot.get("poll", {})
+    _tally_cache.clear()
     _invalidate_state(
         poll.get("voteId"),
         poll.get("version"),
@@ -293,7 +325,8 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     )
 
     # Emit an initial tally snapshot immediately on connect.
-    initial_tallies = await _get_tallies(redis_client, vote_id)
+    _mark_tally_cache_dirty(vote_id)
+    initial_tallies = await _get_tallies_cached(redis_client, vote_id)
     yield _format_sse(
         "TALLY_SNAPSHOT",
         {
@@ -341,7 +374,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
             last_vote_closed_at = _last_vote_closed.get("ts", 0)
 
         if now - last_snapshot_at >= settings.tally_snapshot_interval_sec:
-            tallies = await _get_tallies(redis_client, vote_id)
+            tallies = await _get_tallies_cached(redis_client, vote_id)
             last_tallies = tallies
             current_snapshot = await _get_state_snapshot(db)
             yield _format_sse(
@@ -358,14 +391,13 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
 
         if now - last_delta_at >= settings.stream_interval_ms / 1000:
             deltas: Dict[str, int] = {}
-            if _consume_dirty(vote_id):
-                tallies = await _get_tallies(redis_client, vote_id)
-                for option, value in tallies.items():
-                    deltas[option] = value - last_tallies.get(option, 0)
-                last_tallies = tallies
-            else:
-                for option in last_tallies.keys():
+            tallies = await _get_tallies_cached(redis_client, vote_id)
+            for option, value in tallies.items():
+                deltas[option] = value - last_tallies.get(option, 0)
+            for option in last_tallies.keys():
+                if option not in deltas:
                     deltas[option] = 0
+            last_tallies = tallies
             yield _format_sse(
                 "TALLY_DELTA",
                 {"voteId": vote_id, "ts": _utc_ms(), "delta": deltas},
