@@ -38,7 +38,7 @@ def enqueue_json_task_with_delay(
     queue_name: str,
     target_url: str,
     payload: Dict[str, Any],
-    delay_seconds: int,
+    delay_seconds: float,
     task_id: str | None = None,
     ignore_already_exists: bool = True,
 ) -> str | None:
@@ -63,7 +63,7 @@ def enqueue_json_task_with_delay(
     if service_account:
         task["http_request"]["oidc_token"] = {"service_account_email": service_account}
 
-    schedule_time = datetime.now(timezone.utc) + timedelta(seconds=max(0, int(delay_seconds)))
+    schedule_time = datetime.now(timezone.utc) + timedelta(seconds=max(0.0, float(delay_seconds)))
     timestamp = timestamp_pb2.Timestamp()
     timestamp.FromDatetime(schedule_time)
     task["schedule_time"] = timestamp

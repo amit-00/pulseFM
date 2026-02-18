@@ -8,7 +8,6 @@ class Settings:
     stations_collection: str = os.getenv("STATIONS_COLLECTION", "stations")
     songs_collection: str = os.getenv("SONGS_COLLECTION", "songs")
     vote_state_collection: str = os.getenv("VOTE_STATE_COLLECTION", "voteState")
-    vote_windows_collection: str = os.getenv("VOTE_WINDOWS_COLLECTION", "voteWindows")
     playback_queue: str = os.getenv("PLAYBACK_QUEUE_NAME", "playback-queue")
     playback_tick_url: str = os.getenv("PLAYBACK_TICK_URL", "")
     playback_events_topic: str = os.getenv("PLAYBACK_EVENTS_TOPIC", "playback")

@@ -138,10 +138,6 @@ resource "google_cloud_run_v2_service" "playback_service" {
         value = "voteState"
       }
       env {
-        name  = "VOTE_WINDOWS_COLLECTION"
-        value = "voteWindows"
-      }
-      env {
         name  = "VOTE_EVENTS_TOPIC"
         value = google_pubsub_topic.vote_events.name
       }

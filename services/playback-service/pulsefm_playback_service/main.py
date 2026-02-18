@@ -216,7 +216,6 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
         "closedAt": closed_at,
     }
 
-    await db.collection(settings.vote_windows_collection).document(vote_id).set(window_doc)
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
 
     try:
@@ -283,7 +282,6 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
     window_doc = _build_vote(vote_id, start_at, duration_ms, window_options, version)
 
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
-    await db.collection(settings.vote_windows_collection).document(vote_id).set(window_doc)
     logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
     _publish_vote_event("OPEN", vote_id)
 
@@ -378,7 +376,8 @@ async def tick() -> Dict[str, str]:
         logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
-    duration_ms = int(result["durationMs"])
+    song_duration_ms = int(result["durationMs"])
+    vote_duration_ms = max(0, song_duration_ms - (VOTE_CLOSE_LEAD_SECONDS * 1000))
     try:
         state = await _get_current_state(db)
         if state and state.get("status") == "OPEN":
@@ -386,7 +385,7 @@ async def tick() -> Dict[str, str]:
             version = int(state.get("version") or 0) + 1
         else:
             version = int(state.get("version") or 0) + 1 if state else 1
-        window = await _open_next_vote(db, version, duration_ms)
+        window = await _open_next_vote(db, version, vote_duration_ms)
     except Exception:
         logger.exception("Failed to rotate vote")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rotate vote")
@@ -414,13 +413,14 @@ async def tick() -> Dict[str, str]:
                 "options": window.get("options"),
                 "version": window.get("version"),
                 "status": "OPEN",
+                "endAt": int(window["endAt"].timestamp() * 1000) if isinstance(window.get("endAt"), datetime) else None,
             },
         }
         await _update_redis_on_open(
             window["voteId"],
             window["startAt"],
             window["endAt"],
-            duration_ms,
+            song_duration_ms,
             window["options"],
             snapshot,
         )
@@ -443,14 +443,14 @@ async def tick() -> Dict[str, str]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
 
     playback_tick_url = settings.playback_tick_url.rstrip("/") + "/tick"
-    duration_ms_value = result.get("durationMs")
-    try:
-        delay_seconds = int(duration_ms_value) / 1000 if duration_ms_value else 30
-    except (TypeError, ValueError):
-        delay_seconds = 30
+    delay_seconds = song_duration_ms / 1000
 
     vote_close_url = settings.playback_tick_url.rstrip("/") + "/vote/close"
-    close_delay_seconds = max(0, int(delay_seconds) - VOTE_CLOSE_LEAD_SECONDS)
+    close_delay_seconds = 0.0
+    try:
+        close_delay_seconds = max(0.0, (window["endAt"] - _utc_now()).total_seconds())
+    except Exception:
+        close_delay_seconds = max(0.0, vote_duration_ms / 1000)
     close_vote_id = window.get("voteId")
     close_version = int(window.get("version") or 0)
     close_task_id = _build_vote_close_task_id(str(close_vote_id), close_version)
@@ -477,11 +477,11 @@ async def tick() -> Dict[str, str]:
         settings.playback_queue,
         playback_tick_url,
         {},
-        int(delay_seconds),
+        delay_seconds,
         task_id=task_id,
         ignore_already_exists=True,
     )
-    logger.info("Scheduled next tick", extra={"voteId": result.get("voteId"), "delaySeconds": int(delay_seconds)})
+    logger.info("Scheduled next tick", extra={"voteId": result.get("voteId"), "delaySeconds": delay_seconds})
 
     return {"status": "ok"}
 

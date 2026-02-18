@@ -9,7 +9,7 @@ FastAPI service that streams system state and tally updates over SSE.
 
 ## Event types
 - `HELLO`
-- `TALLY_SNAPSHOT`
+- `TALLY_SNAPSHOT` (includes `status` and optional `winnerOption`)
 - `TALLY_DELTA`
 - `SONG_CHANGED`
 - `VOTE_CLOSED`

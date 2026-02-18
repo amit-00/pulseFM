@@ -16,7 +16,6 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 - `STATIONS_COLLECTION` (default: `stations`)
 - `SONGS_COLLECTION` (default: `songs`)
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
-- `VOTE_WINDOWS_COLLECTION` (default: `voteWindows`)
 - `VOTE_EVENTS_TOPIC` (default: `vote-events`)
 - `PLAYBACK_EVENTS_TOPIC` (default: `playback`)
 - `WINDOW_SECONDS` (default: 300)
@@ -33,6 +32,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 - Publishes vote OPEN/CLOSE events and playback CHANGEOVER.
 - Schedules the next tick based on the current song duration.
 - Schedules a delayed vote-close task 40 seconds before the next tick (or immediately for songs shorter than 40 seconds).
+- Sets vote `endAt` to the close-task trigger time (separate from song `endAt`).
 
 ## Run locally
 ```

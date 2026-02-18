@@ -104,6 +104,8 @@ async def _build_state_snapshot(db: AsyncClient) -> Dict[str, Any]:
             "options": vote_state.get("options") if vote_state else [],
             "version": vote_state.get("version") if vote_state else None,
             "status": vote_state.get("status") if vote_state else None,
+            "endAt": _to_epoch_ms(vote_state.get("endAt") if vote_state else None),
+            "winnerOption": vote_state.get("winnerOption") if vote_state else None,
         },
         "ts": _utc_ms(),
     }
@@ -166,7 +168,10 @@ async def state() -> Dict[str, Any]:
         logger.exception("Redis read failed for state", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read tallies")
 
-    snapshot.setdefault("poll", {})["tallies"] = tallies
+    poll = snapshot.setdefault("poll", {})
+    poll["tallies"] = tallies
+    if poll.get("winnerOption") is None:
+        poll["winnerOption"] = _winner_for_vote(vote_id)
     return snapshot
 
 
@@ -199,6 +204,15 @@ def _record_vote_closed(vote_id: str | None, winner_option: str | None) -> None:
         "winnerOption": winner_option,
         "ts": _utc_ms(),
     }
+
+
+def _winner_for_vote(vote_id: str | None) -> str | None:
+    if not vote_id or not _last_vote_closed:
+        return None
+    if _last_vote_closed.get("voteId") != vote_id:
+        return None
+    winner_option = _last_vote_closed.get("winnerOption")
+    return winner_option if isinstance(winner_option, str) and winner_option else None
 
 
 @app.post("/events/tally")
@@ -282,7 +296,13 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     initial_tallies = await _get_tallies(redis_client, vote_id)
     yield _format_sse(
         "TALLY_SNAPSHOT",
-        {"voteId": vote_id, "ts": _utc_ms(), "tallies": initial_tallies},
+        {
+            "voteId": vote_id,
+            "ts": _utc_ms(),
+            "tallies": initial_tallies,
+            "status": snapshot.get("poll", {}).get("status"),
+            "winnerOption": snapshot.get("poll", {}).get("winnerOption") or _winner_for_vote(vote_id),
+        },
     )
 
     now_loop = asyncio.get_event_loop().time()
@@ -323,9 +343,16 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
         if now - last_snapshot_at >= settings.tally_snapshot_interval_sec:
             tallies = await _get_tallies(redis_client, vote_id)
             last_tallies = tallies
+            current_snapshot = await _get_state_snapshot(db)
             yield _format_sse(
                 "TALLY_SNAPSHOT",
-                {"voteId": vote_id, "ts": _utc_ms(), "tallies": tallies},
+                {
+                    "voteId": vote_id,
+                    "ts": _utc_ms(),
+                    "tallies": tallies,
+                    "status": current_snapshot.get("poll", {}).get("status"),
+                    "winnerOption": current_snapshot.get("poll", {}).get("winnerOption") or _winner_for_vote(vote_id),
+                },
             )
             last_snapshot_at = now
 
