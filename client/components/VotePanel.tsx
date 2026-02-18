@@ -6,6 +6,8 @@ interface VotePanelProps {
   voteData: {
     options: Record<string, string>;
     tallies: Record<string, number>;
+    status: "OPEN" | "CLOSED" | null;
+    winnerOption: string | null;
   };
   formattedTime: string;
   isExpired: boolean;
@@ -28,18 +30,19 @@ export function VotePanel({
 }: VotePanelProps) {
   const optionEntries = Object.entries(voteData.options);
   const totalVotes = Object.values(voteData.tallies).reduce((sum, n) => sum + n, 0);
-  const disabled = hasVoted || isSubmitting || isExpired;
+  const voteClosed = voteData.status === "CLOSED" || isExpired;
+  const disabled = hasVoted || isSubmitting || voteClosed;
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-stone-400">
-          {isExpired ? "Vote Ended" : "Vote for Next Track"}
+          {voteClosed ? "Vote Closed" : "Vote for Next Track"}
         </p>
         <span
           className={cn(
             "text-xs font-mono font-semibold tabular-nums",
-            isExpired ? "text-stone-500" : "text-stone-300",
+            voteClosed ? "text-stone-500" : "text-stone-300",
           )}
         >
           {formattedTime}
@@ -51,6 +54,7 @@ export function VotePanel({
           const count = voteData.tallies[key] ?? 0;
           const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
           const isSelected = selectedOption === key;
+          const isWinner = voteClosed && voteData.winnerOption === key;
 
           return (
             <button
@@ -69,6 +73,7 @@ export function VotePanel({
                   "bg-stone-800/20 border-stone-700/20 text-stone-500 cursor-default",
                 isSelected &&
                   "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 cursor-default",
+                isWinner && "bg-amber-500/10 border-amber-400/50 text-amber-200",
               )}
             >
               {hasVoted && (
@@ -83,6 +88,7 @@ export function VotePanel({
 
               <span className="relative z-10 truncate font-medium">
                 {isSelected && <span className="mr-1.5">✓</span>}
+                {isWinner && !isSelected && <span className="mr-1.5">★</span>}
                 {label}
               </span>
 

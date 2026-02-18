@@ -8,6 +8,7 @@ interface PlayerControlsProps {
   isPlaying: boolean;
   onPlayPause: () => void;
   label?: string;
+  songTimeRemaining?: string;
   className?: string;
   volume?: number;
   onVolumeChange?: (volume: number) => void;
@@ -17,6 +18,7 @@ export function PlayerControls({
   isPlaying,
   onPlayPause,
   label = "Live Radio",
+  songTimeRemaining = "0:00",
   className,
   volume = 1,
   onVolumeChange,
@@ -142,7 +144,7 @@ export function PlayerControls({
       {/* Song Label */}
       <div className="flex flex-col">
         <span className="text-stone-500 text-xs uppercase tracking-wider font-medium">
-          {isPlaying ? "Now Playing" : "Ready"}
+          {isPlaying ? songTimeRemaining : "Ready"}
         </span>
         <span className="text-stone-100 text-lg font-semibold tracking-tight">
           {label}

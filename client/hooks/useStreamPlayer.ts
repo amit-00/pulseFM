@@ -9,7 +9,6 @@ import {
   SongChangedEvent,
   TallyDeltaEvent,
   TallySnapshotEvent,
-  VoteClosedEvent,
 } from "@/lib/types";
 
 type Slot = "first" | "second";
@@ -20,17 +19,27 @@ type VoteView = {
   tallies: Record<string, number>;
   endTime: number;
   status: "OPEN" | "CLOSED" | null;
+  winnerOption: string | null;
 };
 
 function toVoteView(snapshot: PlaybackStateSnapshot | null): VoteView {
-  const poll = snapshot?.poll ?? { voteId: null, options: [], tallies: {}, version: null, status: null };
+  const poll = snapshot?.poll ?? {
+    voteId: null,
+    options: [],
+    tallies: {},
+    version: null,
+    status: null,
+    endAt: null,
+    winnerOption: null,
+  };
   const options = Object.fromEntries(poll.options.map((option) => [option, option]));
   return {
     voteId: poll.voteId,
     options,
     tallies: poll.tallies || {},
-    endTime: snapshot?.currentSong?.endAt ?? Date.now(),
+    endTime: poll.endAt ?? snapshot?.currentSong?.endAt ?? Date.now(),
     status: poll.status ?? null,
+    winnerOption: poll.winnerOption ?? null,
   };
 }
 
@@ -71,6 +80,7 @@ export function useStreamPlayer() {
   const [activeSlot, setActiveSlot] = useState<Slot>("first");
   const [snapshot, setSnapshot] = useState<PlaybackStateSnapshot | null>(null);
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const [songTimeRemaining, setSongTimeRemaining] = useState(0);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -264,7 +274,12 @@ export function useStreamPlayer() {
           }
           const next = {
             ...prev,
-            poll: { ...prev.poll, tallies: data.tallies },
+            poll: {
+              ...prev.poll,
+              tallies: data.tallies,
+              status: data.status ?? prev.poll.status,
+              winnerOption: data.winnerOption ?? null,
+            },
           };
           snapshotRef.current = next;
           return next;
@@ -315,25 +330,6 @@ export function useStreamPlayer() {
         await flushSongChangedQueue();
       } catch {
         setStreamError("Failed to apply song changeover");
-      }
-    });
-
-    es.addEventListener("VOTE_CLOSED", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as VoteClosedEvent;
-        setSnapshot((prev) => {
-          if (!prev || prev.poll.voteId !== data.voteId) {
-            return prev;
-          }
-          const next = {
-            ...prev,
-            poll: { ...prev.poll, status: "CLOSED" as const },
-          };
-          snapshotRef.current = next;
-          return next;
-        });
-      } catch {
-        setStreamError("Invalid VOTE_CLOSED payload");
       }
     });
 
@@ -419,7 +415,12 @@ export function useStreamPlayer() {
 
   const submitVote = useCallback(async (optionKey: string) => {
     const voteId = snapshotRef.current?.poll.voteId;
+    const voteStatus = snapshotRef.current?.poll.status;
     if (!voteId || isSubmittingVote) return;
+    if (voteStatus !== "OPEN") {
+      setVoteError("Voting is closed");
+      return;
+    }
 
     setIsSubmittingVote(true);
     setVoteError(null);
@@ -487,13 +488,27 @@ export function useStreamPlayer() {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      const endAt = snapshotRef.current?.currentSong.endAt;
+      const endAt = snapshotRef.current?.poll.endAt ?? snapshotRef.current?.currentSong.endAt;
       if (!endAt) {
         setTimeRemaining(0);
         return;
       }
       const seconds = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       setTimeRemaining(seconds);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const songEndAt = snapshotRef.current?.currentSong.endAt;
+      if (!songEndAt) {
+        setSongTimeRemaining(0);
+        return;
+      }
+      const seconds = Math.max(0, Math.ceil((songEndAt - Date.now()) / 1000));
+      setSongTimeRemaining(seconds);
     }, 1000);
 
     return () => window.clearInterval(interval);
@@ -536,6 +551,7 @@ export function useStreamPlayer() {
   const voteData = useMemo(() => toVoteView(snapshot), [snapshot]);
   const isExpired = timeRemaining <= 0 || voteData.status === "CLOSED";
   const formattedTime = useMemo(() => formatTime(timeRemaining), [timeRemaining]);
+  const formattedSongTime = useMemo(() => formatTime(songTimeRemaining), [songTimeRemaining]);
 
   return {
     isPlaying,
@@ -551,6 +567,7 @@ export function useStreamPlayer() {
     voteError,
     submitVote,
     formattedTime,
+    formattedSongTime,
     isExpired,
     streamError,
     volume,

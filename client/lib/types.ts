@@ -17,6 +17,8 @@ export interface PollState {
   options: string[];
   version: number | null;
   status?: "OPEN" | "CLOSED" | null;
+  endAt?: number | null;
+  winnerOption?: string | null;
   tallies: PollTallies;
 }
 
@@ -38,6 +40,8 @@ export interface TallySnapshotEvent {
   voteId: string | null;
   ts: number;
   tallies: PollTallies;
+  status?: "OPEN" | "CLOSED" | null;
+  winnerOption?: string | null;
 }
 
 export interface TallyDeltaEvent {
