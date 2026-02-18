@@ -74,7 +74,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
   }
 
-  const token = await getToken({ req: request, secret });
+  const secureCookie = process.env.NODE_ENV === "production";
+  const cookieName = secureCookie
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
+  const token = await getToken({
+    req: request,
+    secret,
+    secureCookie,
+    cookieName,
+    salt: cookieName,
+  });
   if (!token) {
     return NextResponse.json({ error: "auth_missing_token", message: "Authorization token is required" }, { status: 401 });
   }
