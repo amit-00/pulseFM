@@ -27,6 +27,9 @@ _last_vote_closed: Dict[str, Any] | None = None
 _tally_cache: Dict[str, Dict[str, Any]] = {}
 _tally_cache_lock = asyncio.Lock()
 TALLY_CACHE_STALENESS_MS = 500
+_listener_count_cache: Dict[str, Any] = {"value": None, "fetched_at_ms": 0}
+_listener_count_lock = asyncio.Lock()
+LISTENER_CACHE_STALENESS_MS = 1000
 
 
 def _utc_ms() -> int:
@@ -153,6 +156,49 @@ async def _get_tallies(redis_client, vote_id: str | None) -> Dict[str, int]:
     return tallies
 
 
+async def _count_active_listeners(redis_client) -> int:
+    active = await redis_client.get("pulsefm:heartbeat:active")  # type: ignore[misc]
+    if not active:
+        return 0
+
+    count = 0
+    cursor = 0
+    while True:
+        cursor, keys = await redis_client.scan(  # type: ignore[misc]
+            cursor=cursor,
+            match="pulsefm:heartbeat:session:*",
+            count=1000,
+        )
+        count += len(keys or [])
+        if int(cursor) == 0:
+            break
+    return count
+
+
+async def _get_listener_count_cached(redis_client) -> int | None:
+    now_ms = _utc_ms()
+    cached_value = _listener_count_cache.get("value")
+    fetched_at_ms = int(_listener_count_cache.get("fetched_at_ms", 0))
+    if now_ms - fetched_at_ms < LISTENER_CACHE_STALENESS_MS:
+        return cached_value if isinstance(cached_value, int) or cached_value is None else None
+
+    async with _listener_count_lock:
+        now_ms = _utc_ms()
+        cached_value = _listener_count_cache.get("value")
+        fetched_at_ms = int(_listener_count_cache.get("fetched_at_ms", 0))
+        if now_ms - fetched_at_ms < LISTENER_CACHE_STALENESS_MS:
+            return cached_value if isinstance(cached_value, int) or cached_value is None else None
+
+        try:
+            count = await _count_active_listeners(redis_client)
+            _listener_count_cache["value"] = int(count)
+        except Exception:
+            _listener_count_cache["value"] = None
+        _listener_count_cache["fetched_at_ms"] = _utc_ms()
+        cached = _listener_count_cache["value"]
+        return int(cached) if isinstance(cached, int) else None
+
+
 def _mark_tally_cache_dirty(vote_id: str | None) -> None:
     if not vote_id:
         return
@@ -207,11 +253,13 @@ async def state() -> Dict[str, Any]:
     except Exception:
         logger.exception("Redis read failed for state", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read tallies")
+    listeners = await _get_listener_count_cached(redis_client)
 
     poll = snapshot.setdefault("poll", {})
     poll["tallies"] = tallies
     if poll.get("winnerOption") is None:
         poll["winnerOption"] = _winner_for_vote(vote_id)
+    snapshot["listeners"] = listeners
     return snapshot
 
 
@@ -280,6 +328,8 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     snapshot = await _get_state_snapshot(db)
     poll = snapshot.get("poll", {})
     _tally_cache.clear()
+    _listener_count_cache["value"] = None
+    _listener_count_cache["fetched_at_ms"] = 0
     _invalidate_state(
         poll.get("voteId"),
         poll.get("version"),
@@ -392,6 +442,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
         if now - last_delta_at >= settings.stream_interval_ms / 1000:
             deltas: Dict[str, int] = {}
             tallies = await _get_tallies_cached(redis_client, vote_id)
+            listener_count = await _get_listener_count_cached(redis_client)
             for option, value in tallies.items():
                 deltas[option] = value - last_tallies.get(option, 0)
             for option in last_tallies.keys():
@@ -400,7 +451,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
             last_tallies = tallies
             yield _format_sse(
                 "TALLY_DELTA",
-                {"voteId": vote_id, "ts": _utc_ms(), "delta": deltas},
+                {"voteId": vote_id, "ts": _utc_ms(), "delta": deltas, "listeners": listener_count},
             )
             last_delta_at = now
 

@@ -248,6 +248,12 @@ resource "google_service_account_iam_member" "vote_api_act_as_self" {
   member             = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
+resource "google_service_account_iam_member" "nextjs_server_oidc_token_creator_self" {
+  service_account_id = google_service_account.nextjs_server.name
+  role               = "roles/iam.serviceAccountOpenIdTokenCreator"
+  member             = "serviceAccount:${google_service_account.nextjs_server.email}"
+}
+
 resource "google_storage_bucket_iam_member" "vote_api_bucket_viewer" {
   bucket = google_storage_bucket.generated_songs.name
   role   = "roles/storage.objectViewer"

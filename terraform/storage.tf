@@ -6,7 +6,7 @@ resource "google_storage_bucket" "generated_songs" {
   uniform_bucket_level_access = true
 
   cors {
-    origin          = ["http://localhost:3000", "http://127.0.0.1:3000", "https://pulsefm.app"]
+    origin          = ["http://localhost:3000", "http://127.0.0.1:3000", "https://pulsefm.app", "https://www.pulsefm.app"]
     method          = ["GET", "HEAD", "OPTIONS"]
     response_header = ["Content-Type", "Content-Length", "Accept-Ranges", "Range"]
     max_age_seconds = 3600

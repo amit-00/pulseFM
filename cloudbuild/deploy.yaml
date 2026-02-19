@@ -34,30 +34,80 @@ steps:
           -var="github_owner=${_GITHUB_OWNER}" \
           -var="github_repo=${_GITHUB_REPO}" \
           -var="github_branch=${_GITHUB_BRANCH}"
+          -var="modal_token_id=${_MODAL_TOKEN_ID}"
+          -var="modal_token_secret=${_MODAL_TOKEN_SECRET}"
   - name: gcr.io/cloud-builders/docker
     id: build-vote-api
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}", "-f", "services/vote-api/Dockerfile", "."]
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}",
+        "-f",
+        "services/vote-api/Dockerfile",
+        ".",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: push-vote-api
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}"]
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:${SHORT_SHA}",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: build-encoder
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}", "-f", "services/encoder/Dockerfile", "."]
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}",
+        "-f",
+        "services/encoder/Dockerfile",
+        ".",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: push-encoder
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}"]
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA}",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: build-playback-service
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}", "-f", "services/playback-service/Dockerfile", "."]
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}",
+        "-f",
+        "services/playback-service/Dockerfile",
+        ".",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: push-playback-service
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}"]
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA}",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: build-playback-stream
-    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}", "-f", "services/playback-stream/Dockerfile", "."]
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}",
+        "-f",
+        "services/playback-stream/Dockerfile",
+        ".",
+      ]
   - name: gcr.io/cloud-builders/docker
     id: push-playback-stream
-    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}"]
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}",
+      ]
   - name: gcr.io/cloud-builders/gcloud
     id: deploy-services
     entrypoint: /bin/sh

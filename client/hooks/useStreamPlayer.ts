@@ -74,6 +74,8 @@ const SONG_CHANGE_RETRY_ATTEMPTS = 2;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 const RECONNECT_JITTER_MS = 250;
+const HEARTBEAT_INTERVAL_MS = 15000;
+const HEARTBEAT_JITTER_MS = 2000;
 
 export function useStreamPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -87,6 +89,8 @@ export function useStreamPlayer() {
   const [isSubmittingVote, setIsSubmittingVote] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
   const [volume, setVolume] = useState(1);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [activeListeners, setActiveListeners] = useState<number | null>(null);
   const audioElementsConnected = useRef(false);
   const sourceReady = useRef(false);
   const streamRef = useRef<EventSource | null>(null);
@@ -123,6 +127,7 @@ export function useStreamPlayer() {
     setSnapshot(nextSnapshot);
     snapshotRef.current = nextSnapshot;
     pollVersionRef.current = nextSnapshot.poll.version;
+    setActiveListeners(typeof nextSnapshot.listeners === "number" ? nextSnapshot.listeners : null);
 
     // Restore vote state from the session cookie so all tabs stay in sync
     const voteStatus = await fetchVoteStatus(nextSnapshot.poll.voteId);
@@ -292,6 +297,11 @@ export function useStreamPlayer() {
     es.addEventListener("TALLY_DELTA", (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data) as TallyDeltaEvent;
+        if (typeof data.listeners === "number") {
+          setActiveListeners(data.listeners);
+        } else if (data.listeners === null) {
+          setActiveListeners(null);
+        }
         setSnapshot((prev) => {
           if (!prev || prev.poll.voteId !== data.voteId) {
             return prev;
@@ -455,6 +465,7 @@ export function useStreamPlayer() {
       try {
         await ensureSession();
         if (cancelled) return;
+        setSessionReady(true);
         await refreshState();
         if (cancelled) return;
         connectStream();
@@ -473,6 +484,49 @@ export function useStreamPlayer() {
       }
     };
   }, [connectStream, refreshState]);
+
+  useEffect(() => {
+    if (!sessionReady) {
+      return;
+    }
+
+    let cancelled = false;
+    let timerId: number | null = null;
+
+    const scheduleNext = () => {
+      if (cancelled) {
+        return;
+      }
+      const jitterMs = Math.floor((Math.random() * 2 - 1) * HEARTBEAT_JITTER_MS);
+      const delayMs = Math.max(1000, HEARTBEAT_INTERVAL_MS + jitterMs);
+      timerId = window.setTimeout(sendHeartbeat, delayMs);
+    };
+
+    const sendHeartbeat = async () => {
+      if (cancelled) {
+        return;
+      }
+      try {
+        await fetch("/api/heartbeat", {
+          method: "POST",
+          cache: "no-store",
+        });
+      } catch {
+        // Silent retry only.
+      } finally {
+        scheduleNext();
+      }
+    };
+
+    timerId = window.setTimeout(sendHeartbeat, 0);
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [sessionReady]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -568,6 +622,7 @@ export function useStreamPlayer() {
     submitVote,
     formattedTime,
     formattedSongTime,
+    activeListeners,
     isExpired,
     streamError,
     volume,

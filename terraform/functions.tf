@@ -94,8 +94,10 @@ resource "google_cloudfunctions2_function" "modal_dispatcher" {
     vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
 
     environment_variables = {
-      REDIS_HOST = google_redis_instance.memorystore.host
-      REDIS_PORT = tostring(google_redis_instance.memorystore.port)
+      REDIS_HOST         = google_redis_instance.memorystore.host
+      REDIS_PORT         = tostring(google_redis_instance.memorystore.port)
+      MODAL_TOKEN_ID     = var.modal_token_id
+      MODAL_TOKEN_SECRET = var.modal_token_secret
     }
   }
 

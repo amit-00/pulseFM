@@ -26,6 +26,7 @@ export interface PlaybackStateSnapshot {
   currentSong: SongState;
   nextSong: NextSongState;
   poll: PollState;
+  listeners?: number | null;
   ts?: number;
 }
 
@@ -48,6 +49,7 @@ export interface TallyDeltaEvent {
   voteId: string | null;
   ts: number;
   delta: PollTallies;
+  listeners?: number | null;
 }
 
 export interface SongChangedEvent {

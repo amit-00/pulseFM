@@ -134,3 +134,15 @@ variable "vercel_oidc_environment" {
   description = "Vercel environment allowed for OIDC impersonation."
   default     = "production"
 }
+
+variable "modal_token_id" {
+  type        = string
+  description = "Modal token ID."
+  sensitive   = true
+}
+
+variable "modal_token_secret" {
+  type        = string
+  description = "Modal token secret."
+  sensitive   = true
+}

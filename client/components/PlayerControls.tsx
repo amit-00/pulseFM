@@ -9,6 +9,7 @@ interface PlayerControlsProps {
   onPlayPause: () => void;
   label?: string;
   songTimeRemaining?: string;
+  activeListeners?: number | null;
   className?: string;
   volume?: number;
   onVolumeChange?: (volume: number) => void;
@@ -19,6 +20,7 @@ export function PlayerControls({
   onPlayPause,
   label = "Live Radio",
   songTimeRemaining = "0:00",
+  activeListeners = null,
   className,
   volume = 1,
   onVolumeChange,
@@ -59,6 +61,11 @@ export function PlayerControls({
     }
   };
 
+  const listenerLabel =
+    typeof activeListeners === "number"
+      ? `${activeListeners} ${activeListeners === 1 ? "listener" : "listeners"}`
+      : "- listeners";
+
   return (
     <div className={cn("flex items-center gap-4", className)}>
       {/* Play/Pause Button with Rainbow outline effect when playing */}
@@ -70,6 +77,7 @@ export function PlayerControls({
             "absolute inset-0 flex items-center justify-center",
             "w-14 h-14 rounded-full",
             "transition-all duration-200",
+            "cursor-pointer",
             "focus:outline-none",
             "active:scale-95",
             "bg-stone-800/50",
@@ -113,6 +121,7 @@ export function PlayerControls({
             className={cn(
               "w-14 h-14 rounded-full",
               "flex items-center justify-center",
+              "cursor-pointer",
               "p-0"
             )}
             aria-label={isPlaying ? "Pause" : "Play"}
@@ -149,12 +158,19 @@ export function PlayerControls({
         <span className="text-stone-100 text-lg font-semibold tracking-tight">
           {label}
         </span>
+        <span className="mt-1 flex items-center gap-1.5 text-xs text-stone-300">
+          <span className="relative inline-flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 blur-[1px]" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
+          </span>
+          {listenerLabel}
+        </span>
       </div>
 
       {/* Volume Control */}
       {onVolumeChange && (
         <div
-          className="flex items-center gap-2 ml-auto"
+          className="hidden md:flex items-center gap-2 ml-auto"
           onMouseEnter={() => setIsVolumeHovered(true)}
           onMouseLeave={() => setIsVolumeHovered(false)}
         >

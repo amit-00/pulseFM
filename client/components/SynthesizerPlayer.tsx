@@ -33,6 +33,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
     submitVote,
     formattedTime,
     formattedSongTime,
+    activeListeners,
     isExpired,
     streamError,
     volume,
@@ -163,6 +164,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
                 onPlayPause={handlePlayPause}
                 label="pulseFM Radio"
                 songTimeRemaining={formattedSongTime}
+                activeListeners={activeListeners}
                 volume={volume}
                 onVolumeChange={setVolume}
               />
