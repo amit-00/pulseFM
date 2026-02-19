@@ -33,8 +33,8 @@ steps:
           -var="options_per_window=${_OPTIONS_PER_WINDOW}" \
           -var="github_owner=${_GITHUB_OWNER}" \
           -var="github_repo=${_GITHUB_REPO}" \
-          -var="github_branch=${_GITHUB_BRANCH}"
-          -var="modal_token_id=${_MODAL_TOKEN_ID}"
+          -var="github_branch=${_GITHUB_BRANCH}" \
+          -var="modal_token_id=${_MODAL_TOKEN_ID}" \
           -var="modal_token_secret=${_MODAL_TOKEN_SECRET}"
   - name: gcr.io/cloud-builders/docker
     id: build-vote-api
