@@ -36,9 +36,9 @@ resource "google_project_iam_member" "next_song_updater_firestore" {
   member  = "serviceAccount:${google_service_account.next_song_updater.email}"
 }
 
-resource "google_project_iam_member" "next_song_updater_pubsub" {
+resource "google_project_iam_member" "next_song_updater_tasks" {
   project = var.project_id
-  role    = "roles/pubsub.publisher"
+  role    = "roles/cloudtasks.enqueuer"
   member  = "serviceAccount:${google_service_account.next_song_updater.email}"
 }
 
@@ -118,12 +118,6 @@ resource "google_project_iam_member" "heartbeat_receiver_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${google_service_account.heartbeat_receiver.email}"
-}
-
-resource "google_project_iam_member" "next_song_updater_vpc_access" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
 }
 
 resource "google_project_iam_member" "encoder_firestore" {
@@ -312,4 +306,10 @@ resource "google_service_account_iam_member" "playback_service_act_as_self" {
   service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.playback_service.email}"
+}
+
+resource "google_service_account_iam_member" "next_song_updater_act_as_playback_service" {
+  service_account_id = google_service_account.playback_service.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.next_song_updater.email}"
 }

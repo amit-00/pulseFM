@@ -1,4 +1,5 @@
 import logging
+import json
 import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -6,14 +7,18 @@ from typing import Any, Dict, Optional
 import uuid
 
 from fastapi import FastAPI, HTTPException, status
+from google.cloud import firestore
 from google.cloud.firestore import AsyncClient, AsyncTransaction, async_transactional, SERVER_TIMESTAMP
 
 from pulsefm_descriptors.data import get_descriptor_keys
 from pulsefm_pubsub.client import publish_json
 from pulsefm_redis.client import (
+    get_playback_current_snapshot,
     get_poll_tallies,
     get_redis_client,
     init_poll_open_atomic,
+    playback_current_key,
+    set_playback_current_snapshot,
     set_playback_poll_status,
 )
 from pulsefm_tasks.client import enqueue_json_task_with_delay
@@ -119,23 +124,27 @@ async def _ensure_playback_tick_scheduled() -> None:
     logger.info("Startup tick scheduled", extra={"voteId": vote_id, "delaySeconds": delay_seconds})
 
 
-async def _get_ready_song(db) -> Optional[Dict[str, Any]]:
+async def _get_ready_song(db, exclude_vote_id: str | None = None) -> Optional[Dict[str, Any]]:
     query = (
         db.collection(settings.songs_collection)
         .where("status", "==", "ready")
-        .order_by("createdAt")
-        .limit(1)
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+        .limit(5)
     )
     docs = await query.get()
     if not docs:
         return None
-    doc = docs[0]
-    data = doc.to_dict() or {}
-    return {
-        "id": doc.id,
-        "duration": data.get("durationMs"),
-        "createdAt": data.get("createdAt"),
-    }
+
+    for doc in docs:
+        if exclude_vote_id and doc.id == exclude_vote_id:
+            continue
+        data = doc.to_dict() or {}
+        return {
+            "id": doc.id,
+            "duration": data.get("durationMs"),
+            "createdAt": data.get("createdAt"),
+        }
+    return None
 
 
 async def _get_stubbed_song(db) -> Dict[str, Any]:
@@ -192,6 +201,32 @@ def _publish_vote_event(event: str, vote_id: str, winner_option: str | None = No
     if winner_option is not None:
         payload["winnerOption"] = winner_option
     publish_json(settings.project_id or None, settings.vote_events_topic, payload)
+
+
+def _publish_playback_event(event: str, payload: Dict[str, Any]) -> None:
+    event_payload = {"event": event, **payload}
+    publish_json(settings.project_id or None, settings.playback_events_topic, event_payload)
+
+
+async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) -> None:
+    client = get_redis_client()
+    snapshot = await get_playback_current_snapshot(client)
+    if not snapshot:
+        raise ValueError("playback snapshot missing")
+
+    next_song = snapshot.get("nextSong")
+    if not isinstance(next_song, dict):
+        next_song = {}
+    next_song["voteId"] = vote_id
+    next_song["durationMs"] = int(duration_ms)
+    snapshot["nextSong"] = next_song
+
+    ttl = await client.ttl(playback_current_key())  # type: ignore[misc]
+    if ttl and int(ttl) > 0:
+        await set_playback_current_snapshot(client, snapshot, int(ttl))
+        return
+    payload = json.dumps(snapshot, separators=(",", ":"))
+    await client.set(playback_current_key(), payload)  # type: ignore[misc]
 
 
 async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -312,24 +347,76 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "ok", **result}
 
 
+@app.post("/next/replace-if-stubbed")
+async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
+    vote_id_raw = payload.get("voteId")
+    duration_raw = payload.get("durationMs")
+    if not isinstance(vote_id_raw, str) or not vote_id_raw.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
+    if not isinstance(duration_raw, int) or duration_raw <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs is required and must be a positive integer")
+    try:
+        duration_ms = int(duration_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be an integer")
+    if duration_ms <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be positive")
+
+    vote_id = vote_id_raw.strip()
+    db = get_firestore_client()
+    station_ref = db.collection(settings.stations_collection).document("main")
+    songs_ref = db.collection(settings.songs_collection)
+
+    @async_transactional
+    async def _transaction_fn(transaction: AsyncTransaction) -> Dict[str, Any]:
+        station_snap = await station_ref.get(transaction=transaction)
+        if not station_snap.exists:
+            raise ValueError("stations/main not found")
+        station = station_snap.to_dict() or {}
+        next_data = station.get("next") or {}
+        next_vote_id = next_data.get("voteId")
+
+        if next_vote_id == vote_id:
+            return {"action": "already_set", "voteId": vote_id, "durationMs": duration_ms}
+        if next_vote_id != "stubbed":
+            return {"action": "noop", "reason": "next_not_stubbed", "voteId": next_vote_id}
+
+        transaction.update(station_ref, {
+            "next": {
+                "voteId": vote_id,
+                "duration": duration_ms,
+                "durationMs": duration_ms,
+            },
+        })
+        if vote_id != "stubbed":
+            transaction.update(songs_ref.document(vote_id), {"status": "queued"})
+        return {"action": "updated", "voteId": vote_id, "durationMs": duration_ms}
+
+    transaction = db.transaction()
+    try:
+        result = await _transaction_fn(transaction)
+    except ValueError as exc:
+        logger.exception("Failed to replace next song")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to replace next song", extra={"voteId": vote_id})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to replace next song")
+
+    if result.get("action") == "updated":
+        try:
+            await _update_playback_next_song_snapshot(vote_id, duration_ms)
+            _publish_playback_event("NEXT-SONG-CHANGED", {"voteId": vote_id, "durationMs": duration_ms})
+        except Exception:
+            logger.exception("Failed to publish next-song change", extra={"voteId": vote_id})
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish next-song change")
+
+    logger.info("Replace next request handled", extra={"result": result})
+    return {"status": "ok", **result}
+
+
 @app.post("/tick")
 async def tick() -> Dict[str, str]:
     db = get_firestore_client()
-
-    try:
-        ready_song = await _get_ready_song(db)
-    except Exception:
-        logger.exception("Failed to get ready song")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get ready song")
-
-    if ready_song is None:
-        try:
-            ready_song = await _get_stubbed_song(db)
-        except Exception:
-            logger.exception("Failed to get stubbed song")
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get stubbed song")
-
-    logger.info("Selected song", extra={"voteId": ready_song.get("id"), "stubbed": ready_song.get("stubbed", False)})
 
     station_ref = db.collection(settings.stations_collection).document("main")
     songs_ref = db.collection(settings.songs_collection)
@@ -345,12 +432,47 @@ async def tick() -> Dict[str, str]:
 
         next_data = station.get("next") or {}
         current_vote_id = next_data.get("voteId")
-        current_duration = next_data.get("duration")
+        current_duration = next_data.get("durationMs") or next_data.get("duration")
         if current_vote_id is None or current_duration is None:
             raise ValueError("stations/main.next is missing fields")
 
         duration_ms = int(current_duration)
         ends_at = now + timedelta(milliseconds=duration_ms)
+
+        candidate_song: Dict[str, Any] | None = None
+        query = (
+            songs_ref
+            .where("status", "==", "ready")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(5)
+        )
+        ready_docs = await query.get(transaction=transaction)
+        for doc in ready_docs:
+            if doc.id == current_vote_id:
+                continue
+            data = doc.to_dict() or {}
+            candidate_song = {
+                "id": doc.id,
+                "duration": data.get("durationMs"),
+                "stubbed": False,
+            }
+            break
+
+        if candidate_song is None:
+            stubbed_snap = await songs_ref.document("stubbed").get(transaction=transaction)
+            if not stubbed_snap.exists:
+                raise ValueError("No ready song or stubbed song")
+            stubbed_data = stubbed_snap.to_dict() or {}
+            stubbed_duration = stubbed_data.get("durationMs")
+            if stubbed_duration is None:
+                raise ValueError("Stubbed song missing fields")
+            candidate_song = {
+                "id": "stubbed",
+                "duration": stubbed_duration,
+                "stubbed": True,
+            }
+
+        next_duration_ms = int(candidate_song["duration"])
 
         transaction.update(station_ref, {
             "voteId": current_vote_id,
@@ -358,16 +480,26 @@ async def tick() -> Dict[str, str]:
             "endAt": ends_at,
             "durationMs": duration_ms,
             "next": {
-                "voteId": ready_song["id"],
-                "duration": ready_song["duration"],
+                "voteId": candidate_song["id"],
+                "duration": next_duration_ms,
+                "durationMs": next_duration_ms,
             },
         })
 
-        if not ready_song.get("stubbed"):
-            song_ref = songs_ref.document(ready_song["id"])
-            transaction.update(song_ref, {"status": "played"})
+        if current_vote_id != "stubbed":
+            transaction.update(songs_ref.document(current_vote_id), {"status": "played"})
+        if not candidate_song.get("stubbed"):
+            transaction.update(songs_ref.document(candidate_song["id"]), {"status": "queued"})
 
-        return {"startAt": now, "endsAt": ends_at, "durationMs": duration_ms, "voteId": current_vote_id}
+        return {
+            "startAt": now,
+            "endsAt": ends_at,
+            "durationMs": duration_ms,
+            "voteId": current_vote_id,
+            "nextVoteId": candidate_song["id"],
+            "nextDurationMs": next_duration_ms,
+            "nextStubbed": bool(candidate_song.get("stubbed")),
+        }
 
     transaction = db.transaction()
     try:
@@ -375,6 +507,14 @@ async def tick() -> Dict[str, str]:
     except ValueError as exc:
         logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except Exception:
+        logger.exception("Playback transaction failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to run playback transaction")
+
+    logger.info(
+        "Selected next song",
+        extra={"voteId": result.get("nextVoteId"), "stubbed": result.get("nextStubbed", False)},
+    )
 
     song_duration_ms = int(result["durationMs"])
     vote_duration_ms = max(0, song_duration_ms - (VOTE_CLOSE_LEAD_SECONDS * 1000))
@@ -405,8 +545,8 @@ async def tick() -> Dict[str, str]:
                 "durationMs": current_duration_ms,
             },
             "nextSong": {
-                "voteId": ready_song.get("id"),
-                "durationMs": ready_song.get("duration"),
+                "voteId": result.get("nextVoteId"),
+                "durationMs": result.get("nextDurationMs"),
             },
             "poll": {
                 "voteId": window.get("voteId"),
@@ -429,11 +569,14 @@ async def tick() -> Dict[str, str]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
 
     try:
-        publish_json(
-            settings.project_id or None,
-            settings.playback_events_topic,
-            {"event": "CHANGEOVER", "durationMs": result["durationMs"]},
+        _publish_playback_event(
+            "NEXT-SONG-CHANGED",
+            {
+                "voteId": result.get("nextVoteId"),
+                "durationMs": result.get("nextDurationMs"),
+            },
         )
+        _publish_playback_event("CHANGEOVER", {"durationMs": result["durationMs"]})
     except Exception:
         logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")

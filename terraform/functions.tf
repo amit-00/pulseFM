@@ -244,22 +244,19 @@ resource "google_cloudfunctions2_function" "next_song_updater" {
   }
 
   service_config {
-    available_memory              = "256M"
-    timeout_seconds               = 30
-    service_account_email         = google_service_account.next_song_updater.email
-    vpc_connector                 = google_vpc_access_connector.memorystore.id
-    vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
+    available_memory      = "256M"
+    timeout_seconds       = 30
+    service_account_email = google_service_account.next_song_updater.email
 
     environment_variables = {
-      TARGET_BUCKET         = google_storage_bucket.generated_songs.name
-      ENCODED_PREFIX        = "encoded/"
-      STATIONS_COLLECTION   = "stations"
-      STATION_DOC_ID        = "main"
-      SONGS_COLLECTION      = "songs"
-      REDIS_HOST            = google_redis_instance.memorystore.host
-      REDIS_PORT            = tostring(google_redis_instance.memorystore.port)
-      PROJECT_ID            = var.project_id
-      PLAYBACK_EVENTS_TOPIC = google_pubsub_topic.playback_events.name
+      TARGET_BUCKET              = google_storage_bucket.generated_songs.name
+      ENCODED_PREFIX             = "encoded/"
+      SONGS_COLLECTION           = "songs"
+      PROJECT_ID                 = var.project_id
+      LOCATION                   = var.region
+      PLAYBACK_QUEUE_NAME        = google_cloud_tasks_queue.playback_queue.name
+      PLAYBACK_SERVICE_URL       = google_cloud_run_v2_service.playback_service.uri
+      TASKS_OIDC_SERVICE_ACCOUNT = google_service_account.playback_service.email
     }
   }
 

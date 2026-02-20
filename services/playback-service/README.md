@@ -5,6 +5,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 ## Endpoint
 - `POST /tick`
 - `POST /vote/close`
+- `POST /next/replace-if-stubbed`
 - `GET /health`
 
 ## Required env vars
@@ -26,10 +27,11 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 
 ## Behavior
 - Updates station playback and marks songs played.
+- `POST /next/replace-if-stubbed` replaces `stations/main.next` only when next is `stubbed`, marks the selected song `queued`, updates redis snapshot `nextSong`, and emits `NEXT-SONG-CHANGED`.
 - `POST /vote/close` only closes the current vote when both `voteId` and `version` match `voteState/current`.
-- `POST /tick` closes current vote only when it is open, then opens a new vote.
+- `POST /tick` closes current vote only when it is open, then opens a new vote. It promotes `stations/main.next` to current playback, marks the promoted song `played` (non-stubbed), and chooses the most recently `ready` song as the next candidate (fallback `stubbed`).
 - Maintains poll lifecycle state in Redis `pulsefm:playback:current` via `poll.status` (`OPEN`/`CLOSED`).
-- Publishes vote OPEN/CLOSE events and playback CHANGEOVER.
+- Publishes vote OPEN/CLOSE events and playback `CHANGEOVER` plus `NEXT-SONG-CHANGED`.
 - Schedules the next tick based on the current song duration.
 - Schedules a delayed vote-close task 60 seconds before the next tick (or immediately for songs shorter than 60 seconds).
 - Sets vote `endAt` to the close-task trigger time (separate from song `endAt`).
