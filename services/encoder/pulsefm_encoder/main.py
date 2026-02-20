@@ -1,8 +1,10 @@
+import asyncio
 import logging
-import os
 import tempfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel
@@ -10,30 +12,24 @@ from pydub import AudioSegment
 from google.cloud.storage import Client as StorageClient
 from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
 
-# Configure logging
+from pulsefm_encoder.config import settings
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 MAX_BYTES = 100 * 1024 * 1024
 EVENT_TYPE_FINALIZED = "google.cloud.storage.object.v1.finalized"
 
-RAW_BUCKET = os.getenv("RAW_BUCKET", "pulsefm-generated-songs")
-RAW_PREFIX = os.getenv("RAW_PREFIX", "raw/")
-ENCODED_BUCKET = os.getenv("ENCODED_BUCKET", RAW_BUCKET)
-ENCODED_PREFIX = os.getenv("ENCODED_PREFIX", "encoded/")
-ENCODED_CACHE_CONTROL = os.getenv("ENCODED_CACHE_CONTROL", "public,max-age=300,s-maxage=3600")
-SONGS_COLLECTION = os.getenv("SONGS_COLLECTION", "songs")
-
 
 class GcsObject(BaseModel):
     bucket: str
     name: str
-    size: Optional[str] = None
-    contentType: Optional[str] = None
+    size: str | None = None
+    contentType: str | None = None
 
 
 class CloudEventEnvelope(BaseModel):
@@ -41,13 +37,24 @@ class CloudEventEnvelope(BaseModel):
     data: Dict[str, Any]
 
 
-app = FastAPI(title="PulseFM Encoder", version="1.0.0")
+_storage: StorageClient | None = None
+_db: AsyncClient | None = None
 
 
-def _normalize_prefix(prefix: str) -> str:
-    if not prefix:
-        return ""
-    return prefix if prefix.endswith("/") else f"{prefix}/"
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    global _storage, _db
+    _storage = StorageClient()
+    _db = AsyncClient()
+    yield
+
+
+app = FastAPI(title="PulseFM Encoder", version="1.0.0", lifespan=_lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _parse_cloud_event(request: Request, body: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
@@ -65,7 +72,7 @@ def _parse_cloud_event(request: Request, body: Dict[str, Any]) -> tuple[str, Dic
     )
 
 
-def _size_ok(size_value: Optional[str]) -> bool:
+def _size_ok(size_value: str | None) -> bool:
     if size_value is None:
         return True
     try:
@@ -74,55 +81,40 @@ def _size_ok(size_value: Optional[str]) -> bool:
         return True
 
 
-@app.get("/health")
-async def health() -> Dict[str, str]:
-    return {"status": "healthy"}
-
-
-@app.post("/")
-async def handle_event(request: Request) -> Dict[str, str]:
-    try:
-        body = await request.json()
-    except Exception:
-        logger.warning("Invalid JSON body")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON body",
-        )
+def _parse_and_filter(request: Request, body: Dict[str, Any]) -> GcsObject | None:
     event_type, data = _parse_cloud_event(request, body)
 
     if event_type != EVENT_TYPE_FINALIZED:
         logger.info("Ignoring event type: %s", event_type)
-        return {"status": "ignored"}
+        return None
 
-    gcs_object = GcsObject(**data)
-    raw_prefix = _normalize_prefix(RAW_PREFIX)
-    encoded_prefix = _normalize_prefix(ENCODED_PREFIX)
+    obj = GcsObject(**data)
 
-    if gcs_object.bucket != RAW_BUCKET:
-        logger.info("Ignoring bucket %s", gcs_object.bucket)
-        return {"status": "ignored"}
+    if obj.bucket != settings.raw_bucket:
+        logger.info("Ignoring bucket %s", obj.bucket)
+        return None
+    if not obj.name.startswith(settings.raw_prefix):
+        logger.info("Ignoring object outside raw prefix: %s", obj.name)
+        return None
+    if not obj.name.lower().endswith(".wav"):
+        logger.info("Ignoring non-wav file: %s", obj.name)
+        return None
+    if not _size_ok(obj.size):
+        logger.warning("File too large (event size): %s", obj.size)
+        return None
 
-    if not gcs_object.name.startswith(raw_prefix):
-        logger.info("Ignoring object outside raw prefix: %s", gcs_object.name)
-        return {"status": "ignored"}
+    return obj
 
-    if not gcs_object.name.lower().endswith(".wav"):
-        logger.info("Ignoring non-wav file: %s", gcs_object.name)
-        return {"status": "ignored"}
 
-    if not _size_ok(gcs_object.size):
-        logger.warning("File too large (event size): %s", gcs_object.size)
-        return {"status": "skipped"}
-
-    storage_client = StorageClient()
-    bucket = storage_client.bucket(gcs_object.bucket)
+def _encode_audio_sync(storage: StorageClient, gcs_object: GcsObject) -> tuple[str, int]:
+    """Download WAV, encode to AAC, upload. Runs in a worker thread."""
+    bucket = storage.bucket(gcs_object.bucket)
     blob = bucket.blob(gcs_object.name)
     blob.reload()
 
     if blob.size is not None and blob.size > MAX_BYTES:
         logger.warning("File too large (blob size): %s", blob.size)
-        return {"status": "skipped"}
+        return ("", -1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         input_path = Path(tmpdir) / Path(gcs_object.name).name
@@ -142,33 +134,61 @@ async def handle_event(request: Request) -> Dict[str, str]:
             parameters=["-ar", "48000"],
         )
 
-        output_bucket = storage_client.bucket(ENCODED_BUCKET)
-        output_blob_name = f"{encoded_prefix}{output_name}"
+        output_bucket = storage.bucket(settings.encoded_bucket)
+        output_blob_name = f"{settings.encoded_prefix}{output_name}"
         output_blob = output_bucket.blob(output_blob_name)
         # Encoded object names are voteId-based and immutable, so cache aggressively.
-        output_blob.cache_control = ENCODED_CACHE_CONTROL
-        output_blob.upload_from_filename(
-            str(output_path),
-            content_type="audio/mp4",
-        )
+        output_blob.cache_control = settings.encoded_cache_control
+        output_blob.upload_from_filename(str(output_path), content_type="audio/mp4")
 
-        logger.info(
-            "Encoded %s to gs://%s/%s",
-            gcs_object.name,
-            ENCODED_BUCKET,
-            output_blob_name,
-        )
+    logger.info("Encoded %s to gs://%s/%s", gcs_object.name, settings.encoded_bucket, output_blob_name)
+    return (vote_id, duration_ms)
 
+
+async def _persist_metadata(db: AsyncClient, vote_id: str, duration_ms: int) -> None:
+    song_ref = db.collection(settings.songs_collection).document(vote_id)
+    await song_ref.set({
+        "durationMs": duration_ms,
+        "status": "ready",
+        "createdAt": SERVER_TIMESTAMP,
+    })
+    logger.info("Updated songs/%s with durationMs=%s", vote_id, duration_ms)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health() -> Dict[str, str]:
+    return {"status": "healthy"}
+
+
+@app.post("/")
+async def handle_event(request: Request) -> Dict[str, str]:
     try:
-        db = AsyncClient()
-        song_ref = db.collection(SONGS_COLLECTION).document(vote_id)
-        await song_ref.set({
-            "durationMs": duration_ms,
-            "status": "ready",
-            "createdAt": SERVER_TIMESTAMP,
-        })
-        logger.info("Updated songs/%s with durationMs=%s", vote_id, duration_ms)
-    except Exception as exc:
-        logger.exception("Failed to update songs/%s: %s", vote_id, exc)
+        body = await request.json()
+    except ValueError:
+        logger.warning("Invalid JSON body")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
 
+    gcs_object = _parse_and_filter(request, body)
+    if gcs_object is None:
+        return {"status": "ignored"}
+
+    if _storage is None or _db is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Service not initialized",
+        )
+
+    vote_id, duration_ms = await asyncio.to_thread(_encode_audio_sync, _storage, gcs_object)
+    if duration_ms < 0:
+        return {"status": "skipped"}
+
+    await _persist_metadata(_db, vote_id, duration_ms)
     return {"status": "ok"}
