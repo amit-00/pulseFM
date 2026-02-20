@@ -99,6 +99,7 @@ export function useStreamPlayer() {
   const reconnectAttemptRef = useRef(0);
   const snapshotRef = useRef<PlaybackStateSnapshot | null>(null);
   const pollVersionRef = useRef<number | null>(null);
+  const playbackVersionRef = useRef<number>(0);
   const isPlayingRef = useRef(false);
   const activeSlotRef = useRef<Slot>("first");
   const volumeRef = useRef(1);
@@ -204,7 +205,7 @@ export function useStreamPlayer() {
 
   const processSongChangedEvent = useCallback(
     async (data: SongChangedEvent) => {
-      if (pollVersionRef.current !== null && data.version !== null && data.version <= pollVersionRef.current) {
+      if (typeof data.version === "number" && data.version <= playbackVersionRef.current) {
         return;
       }
 
@@ -213,6 +214,9 @@ export function useStreamPlayer() {
         try {
           const nextSnapshot = await refreshState();
           await applySongChangeover(nextSnapshot);
+          if (typeof data.version === "number") {
+            playbackVersionRef.current = Math.max(playbackVersionRef.current, data.version);
+          }
           setStreamError(null);
           return;
         } catch (error) {
@@ -349,6 +353,37 @@ export function useStreamPlayer() {
         const data = JSON.parse(event.data) as NextSongChangedEvent;
         if (!data.voteId) {
           return;
+        }
+
+        const incomingVersion = typeof data.version === "number" ? data.version : null;
+        if (incomingVersion !== null && incomingVersion < playbackVersionRef.current) {
+          return;
+        }
+
+        if (incomingVersion !== null && incomingVersion === playbackVersionRef.current) {
+          const currentNext = snapshotRef.current?.nextSong;
+          const currentVoteId = currentNext?.voteId ?? null;
+          const currentDuration = currentNext?.durationMs ?? null;
+          const incomingDuration = typeof data.durationMs === "number" ? data.durationMs : null;
+          if (currentVoteId !== data.voteId || currentDuration !== incomingDuration) {
+            void (async () => {
+              try {
+                const refreshed = await refreshState();
+                const refreshedVoteId = refreshed.nextSong.voteId;
+                if (refreshedVoteId) {
+                  const inactiveSlot = getInactiveSlot(activeSlotRef.current);
+                  loadTrackToSlot(inactiveSlot, getAudioUrl(refreshedVoteId));
+                }
+              } catch {
+                setStreamError("Failed to reconcile playback state");
+              }
+            })();
+          }
+          return;
+        }
+
+        if (incomingVersion !== null) {
+          playbackVersionRef.current = Math.max(playbackVersionRef.current, incomingVersion);
         }
 
         setSnapshot((prev) => {

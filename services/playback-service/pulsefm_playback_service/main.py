@@ -214,7 +214,7 @@ def _publish_playback_event(event: str, payload: Dict[str, Any]) -> None:
     publish_json(settings.project_id or None, settings.playback_events_topic, event_payload)
 
 
-async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) -> None:
+async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) -> bool:
     client = get_redis_client()
     snapshot = await get_playback_current_snapshot(client)
     if not snapshot:
@@ -223,16 +223,34 @@ async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) ->
     next_song = snapshot.get("nextSong")
     if not isinstance(next_song, dict):
         next_song = {}
+    current_vote_id = next_song.get("voteId")
+    current_duration = next_song.get("durationMs")
+    desired_duration = int(duration_ms)
+    parsed_current_duration = current_duration
+    if not isinstance(parsed_current_duration, int):
+        try:
+            parsed_current_duration = int(parsed_current_duration)
+        except (TypeError, ValueError):
+            parsed_current_duration = None
+
+    redis_changed = (
+        current_vote_id != vote_id
+        or parsed_current_duration != desired_duration
+    )
+    if not redis_changed:
+        return False
+
     next_song["voteId"] = vote_id
-    next_song["durationMs"] = int(duration_ms)
+    next_song["durationMs"] = desired_duration
     snapshot["nextSong"] = next_song
 
     ttl = await client.ttl(playback_current_key())  # type: ignore[misc]
     if ttl and int(ttl) > 0:
         await set_playback_current_snapshot(client, snapshot, int(ttl))
-        return
+        return True
     payload = json.dumps(snapshot, separators=(",", ":"))
     await client.set(playback_current_key(), payload)  # type: ignore[misc]
+    return True
 
 
 async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -381,11 +399,25 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
         station = station_snap.to_dict() or {}
         next_data = station.get("next") or {}
         next_vote_id = next_data.get("voteId")
+        station_version = int(station.get("version") or 0)
 
         if next_vote_id == vote_id:
-            return {"action": "already_set", "voteId": vote_id, "durationMs": duration_ms}
+            existing_duration = next_data.get("durationMs") or next_data.get("duration")
+            if existing_duration is None:
+                raise ValueError("stations/main.next missing duration for already_set")
+            return {
+                "action": "already_set",
+                "voteId": vote_id,
+                "durationMs": int(existing_duration),
+                "version": station_version,
+            }
         if next_vote_id != "stubbed":
-            return {"action": "noop", "reason": "next_not_stubbed", "voteId": next_vote_id}
+            return {
+                "action": "noop",
+                "reason": "next_not_stubbed",
+                "voteId": next_vote_id,
+                "version": station_version,
+            }
 
         transaction.update(station_ref, {
             "next": {
@@ -396,7 +428,7 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
         })
         if vote_id != "stubbed":
             transaction.update(songs_ref.document(vote_id), {"status": "queued"})
-        return {"action": "updated", "voteId": vote_id, "durationMs": duration_ms}
+        return {"action": "updated", "voteId": vote_id, "durationMs": duration_ms, "version": station_version}
 
     transaction = db.transaction()
     try:
@@ -408,15 +440,26 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
         logger.exception("Failed to replace next song", extra={"voteId": vote_id})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to replace next song")
 
-    if result.get("action") == "updated":
+    redis_changed: bool | None = None
+    if result.get("action") in {"updated", "already_set"}:
         try:
-            await _update_playback_next_song_snapshot(vote_id, duration_ms)
-            _publish_playback_event("NEXT-SONG-CHANGED", {"voteId": vote_id, "durationMs": duration_ms})
+            canonical_vote_id = str(result.get("voteId"))
+            canonical_duration_ms = int(result.get("durationMs"))
+            canonical_version = int(result.get("version") or 0)
+            redis_changed = await _update_playback_next_song_snapshot(canonical_vote_id, canonical_duration_ms)
+            if redis_changed:
+                _publish_playback_event(
+                    "NEXT-SONG-CHANGED",
+                    {"voteId": canonical_vote_id, "durationMs": canonical_duration_ms, "version": canonical_version},
+                )
         except Exception:
             logger.exception("Failed to publish next-song change", extra={"voteId": vote_id})
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish next-song change")
 
-    logger.info("Replace next request handled", extra={"result": result})
+    logger.info(
+        "Replace next request handled",
+        extra={"result": result, "redisChanged": redis_changed},
+    )
     return {"status": "ok", **result}
 
 
@@ -607,9 +650,10 @@ async def tick(payload: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "voteId": result.get("nextVoteId"),
                 "durationMs": result.get("nextDurationMs"),
+                "version": request_version,
             },
         )
-        _publish_playback_event("CHANGEOVER", {"durationMs": result["durationMs"]})
+        _publish_playback_event("CHANGEOVER", {"durationMs": result["durationMs"], "version": request_version})
     except Exception:
         logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")

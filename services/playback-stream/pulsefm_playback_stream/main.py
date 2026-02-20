@@ -25,6 +25,7 @@ _db: AsyncClient | None = None
 _last_invalidated: Dict[str, Any] | None = None
 _last_vote_closed: Dict[str, Any] | None = None
 _last_next_song_changed: Dict[str, Any] | None = None
+_last_playback_version: int = 0
 _tally_cache: Dict[str, Dict[str, Any]] = {}
 _tally_cache_lock = asyncio.Lock()
 TALLY_CACHE_STALENESS_MS = 500
@@ -298,8 +299,35 @@ def _record_next_song_changed(vote_id: str | None, duration_ms: Any) -> None:
     _last_next_song_changed = {
         "voteId": vote_id,
         "durationMs": parsed_duration,
+        "version": None,
         "ts": _utc_ms(),
     }
+
+
+def _record_next_song_changed_with_version(vote_id: str | None, duration_ms: Any, version: int | None) -> None:
+    global _last_next_song_changed
+    parsed_duration: int | None = None
+    try:
+        if duration_ms is not None:
+            parsed_duration = int(duration_ms)
+    except (TypeError, ValueError):
+        parsed_duration = None
+
+    _last_next_song_changed = {
+        "voteId": vote_id,
+        "durationMs": parsed_duration,
+        "version": version,
+        "ts": _utc_ms(),
+    }
+
+
+def _parse_event_version(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _winner_for_vote(vote_id: str | None) -> str | None:
@@ -334,19 +362,59 @@ async def tally_event(payload: Dict[str, Any]) -> Dict[str, str]:
 
 @app.post("/events/playback")
 async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
+    global _last_playback_version
     message = decode_pubsub_json(payload)
     event_type = message.get("event")
+    event_version = _parse_event_version(message.get("version"))
 
     if event_type == "NEXT-SONG-CHANGED":
-        _record_next_song_changed(message.get("voteId"), message.get("durationMs"))
+        if event_version is None:
+            logger.warning("Missing version on next-song event")
+            return {"status": "ignored"}
+        if event_version < _last_playback_version:
+            logger.info("Dropped stale next-song event", extra={"version": event_version, "lastVersion": _last_playback_version})
+            return {"status": "ignored"}
+
+        if event_version == _last_playback_version:
+            cached_next = ((_snapshot_cache.data or {}).get("nextSong") or {}) if _snapshot_cache.data else {}
+            cached_vote_id = cached_next.get("voteId")
+            cached_duration = cached_next.get("durationMs")
+            incoming_vote_id = message.get("voteId")
+            incoming_duration = _parse_event_version(message.get("durationMs"))
+            if cached_vote_id != incoming_vote_id or _parse_event_version(cached_duration) != incoming_duration:
+                _snapshot_cache.data = None
+                _snapshot_cache.expires_at_ms = 0
+                db = get_firestore_client()
+                refreshed = await _get_state_snapshot(db)
+                refreshed_next = refreshed.get("nextSong") or {}
+                _record_next_song_changed_with_version(
+                    refreshed_next.get("voteId"),
+                    refreshed_next.get("durationMs"),
+                    event_version,
+                )
+                logger.warning("Next-song conflict detected; forced state refresh", extra={"version": event_version})
+                return {"status": "ok"}
+            return {"status": "ignored"}
+
+        _last_playback_version = event_version
+        _record_next_song_changed_with_version(message.get("voteId"), message.get("durationMs"), event_version)
         # Force a fresh state read so /state and stream snapshot paths pick up updated nextSong quickly.
         _snapshot_cache.data = None
         _snapshot_cache.expires_at_ms = 0
-        logger.info("Recorded next-song change event", extra={"voteId": message.get("voteId")})
+        logger.info(
+            "Recorded next-song change event",
+            extra={"voteId": message.get("voteId"), "version": event_version},
+        )
         return {"status": "ok"}
 
     if event_type != "CHANGEOVER":
         return {"status": "ignored"}
+
+    if event_version is not None and event_version < _last_playback_version:
+        logger.info("Dropped stale changeover event", extra={"version": event_version, "lastVersion": _last_playback_version})
+        return {"status": "ignored"}
+    if event_version is not None:
+        _last_playback_version = event_version
 
     db = get_firestore_client()
     # Drop cached snapshot first so invalidation reads the latest state.
@@ -359,9 +427,12 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     _listener_count_cache["fetched_at_ms"] = 0
     _invalidate_state(
         poll.get("voteId"),
-        poll.get("version"),
+        event_version if event_version is not None else poll.get("version"),
     )
-    logger.info("State invalidated on changeover", extra={"voteId": poll.get("voteId") if poll else None})
+    logger.info(
+        "State invalidated on changeover",
+        extra={"voteId": poll.get("voteId") if poll else None, "version": event_version},
+    )
     return {"status": "ok"}
 
 

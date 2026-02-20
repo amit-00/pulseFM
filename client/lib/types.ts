@@ -61,6 +61,7 @@ export interface SongChangedEvent {
 export interface NextSongChangedEvent {
   voteId: string | null;
   durationMs: number | null;
+  version: number | null;
   ts: number;
 }
 
