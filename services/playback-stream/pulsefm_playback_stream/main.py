@@ -2,9 +2,9 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict
 
-from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from google.cloud.firestore import AsyncClient
 
@@ -81,6 +81,31 @@ class _SnapshotCache:
 _snapshot_cache = _SnapshotCache()
 
 
+def _set_snapshot_cache(snapshot: Dict[str, Any]) -> None:
+    ttl_ms = _snapshot_cache_ttl_ms(snapshot)
+    _snapshot_cache.data = snapshot
+    _snapshot_cache.expires_at_ms = _utc_ms() + ttl_ms if ttl_ms > 0 else _utc_ms()
+
+
+def _clear_snapshot_cache() -> None:
+    _snapshot_cache.data = None
+    _snapshot_cache.expires_at_ms = 0
+
+
+def _poll_from_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    poll = snapshot.get("poll")
+    return poll if isinstance(poll, dict) else {}
+
+
+def _parse_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _to_epoch_ms(value: Any) -> int | None:
     if isinstance(value, datetime):
         if value.tzinfo is None:
@@ -116,9 +141,7 @@ async def _build_state_snapshot(db: AsyncClient) -> Dict[str, Any]:
         },
         "ts": _utc_ms(),
     }
-    ttl_ms = _snapshot_cache_ttl_ms(snapshot)
-    _snapshot_cache.data = snapshot
-    _snapshot_cache.expires_at_ms = _utc_ms() + ttl_ms if ttl_ms > 0 else _utc_ms()
+    _set_snapshot_cache(snapshot)
     return snapshot
 
 
@@ -138,9 +161,7 @@ async def _get_state_snapshot(db: AsyncClient) -> Dict[str, Any]:
         snapshot = None
 
     if snapshot:
-        ttl_ms = _snapshot_cache_ttl_ms(snapshot)
-        _snapshot_cache.data = snapshot
-        _snapshot_cache.expires_at_ms = _utc_ms() + ttl_ms if ttl_ms > 0 else _utc_ms()
+        _set_snapshot_cache(snapshot)
         return snapshot
     return await _build_state_snapshot(db)
 
@@ -201,6 +222,11 @@ async def _get_listener_count_cached(redis_client) -> int | None:
         return int(cached) if isinstance(cached, int) else None
 
 
+def _reset_listener_count_cache() -> None:
+    _listener_count_cache["value"] = None
+    _listener_count_cache["fetched_at_ms"] = 0
+
+
 def _mark_tally_cache_dirty(vote_id: str | None) -> None:
     if not vote_id:
         return
@@ -239,6 +265,10 @@ async def _get_tallies_cached(redis_client, vote_id: str | None) -> Dict[str, in
         return dict(tallies)
 
 
+def _reset_tally_cache() -> None:
+    _tally_cache.clear()
+
+
 @app.get("/state")
 async def state() -> Dict[str, Any]:
     db = get_firestore_client()
@@ -257,7 +287,8 @@ async def state() -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read tallies")
     listeners = await _get_listener_count_cached(redis_client)
 
-    poll = snapshot.setdefault("poll", {})
+    poll = _poll_from_snapshot(snapshot)
+    snapshot["poll"] = poll
     poll["tallies"] = tallies
     if poll.get("winnerOption") is None:
         poll["winnerOption"] = _winner_for_vote(vote_id)
@@ -287,47 +318,23 @@ def _record_vote_closed(vote_id: str | None, winner_option: str | None) -> None:
     }
 
 
-def _record_next_song_changed(vote_id: str | None, duration_ms: Any) -> None:
+def _record_next_song_changed(vote_id: str | None, duration_ms: Any, version: int | None = None) -> None:
     global _last_next_song_changed
-    parsed_duration: int | None = None
-    try:
-        if duration_ms is not None:
-            parsed_duration = int(duration_ms)
-    except (TypeError, ValueError):
-        parsed_duration = None
 
     _last_next_song_changed = {
         "voteId": vote_id,
-        "durationMs": parsed_duration,
-        "version": None,
-        "ts": _utc_ms(),
-    }
-
-
-def _record_next_song_changed_with_version(vote_id: str | None, duration_ms: Any, version: int | None) -> None:
-    global _last_next_song_changed
-    parsed_duration: int | None = None
-    try:
-        if duration_ms is not None:
-            parsed_duration = int(duration_ms)
-    except (TypeError, ValueError):
-        parsed_duration = None
-
-    _last_next_song_changed = {
-        "voteId": vote_id,
-        "durationMs": parsed_duration,
+        "durationMs": _parse_int(duration_ms),
         "version": version,
         "ts": _utc_ms(),
     }
 
 
 def _parse_event_version(value: Any) -> int | None:
-    try:
-        if value is None:
-            return None
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _parse_int(value)
+
+
+def _is_stale_playback_event(event_version: int | None) -> bool:
+    return event_version is not None and event_version < _last_playback_version
 
 
 def _winner_for_vote(vote_id: str | None) -> str | None:
@@ -337,6 +344,17 @@ def _winner_for_vote(vote_id: str | None) -> str | None:
         return None
     winner_option = _last_vote_closed.get("winnerOption")
     return winner_option if isinstance(winner_option, str) and winner_option else None
+
+
+def _build_tally_snapshot_payload(vote_id: str | None, tallies: Dict[str, int], snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    poll = _poll_from_snapshot(snapshot)
+    return {
+        "voteId": vote_id,
+        "ts": _utc_ms(),
+        "tallies": tallies,
+        "status": poll.get("status"),
+        "winnerOption": poll.get("winnerOption") or _winner_for_vote(vote_id),
+    }
 
 
 @app.post("/events/tally")
@@ -371,7 +389,7 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
         if event_version is None:
             logger.warning("Missing version on next-song event")
             return {"status": "ignored"}
-        if event_version < _last_playback_version:
+        if _is_stale_playback_event(event_version):
             logger.info("Dropped stale next-song event", extra={"version": event_version, "lastVersion": _last_playback_version})
             return {"status": "ignored"}
 
@@ -382,12 +400,11 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
             incoming_vote_id = message.get("voteId")
             incoming_duration = _parse_event_version(message.get("durationMs"))
             if cached_vote_id != incoming_vote_id or _parse_event_version(cached_duration) != incoming_duration:
-                _snapshot_cache.data = None
-                _snapshot_cache.expires_at_ms = 0
+                _clear_snapshot_cache()
                 db = get_firestore_client()
                 refreshed = await _get_state_snapshot(db)
                 refreshed_next = refreshed.get("nextSong") or {}
-                _record_next_song_changed_with_version(
+                _record_next_song_changed(
                     refreshed_next.get("voteId"),
                     refreshed_next.get("durationMs"),
                     event_version,
@@ -397,10 +414,8 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
             return {"status": "ignored"}
 
         _last_playback_version = event_version
-        _record_next_song_changed_with_version(message.get("voteId"), message.get("durationMs"), event_version)
-        # Force a fresh state read so /state and stream snapshot paths pick up updated nextSong quickly.
-        _snapshot_cache.data = None
-        _snapshot_cache.expires_at_ms = 0
+        _record_next_song_changed(message.get("voteId"), message.get("durationMs"), event_version)
+        _clear_snapshot_cache()
         logger.info(
             "Recorded next-song change event",
             extra={"voteId": message.get("voteId"), "version": event_version},
@@ -410,21 +425,18 @@ async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     if event_type != "CHANGEOVER":
         return {"status": "ignored"}
 
-    if event_version is not None and event_version < _last_playback_version:
+    if _is_stale_playback_event(event_version):
         logger.info("Dropped stale changeover event", extra={"version": event_version, "lastVersion": _last_playback_version})
         return {"status": "ignored"}
     if event_version is not None:
         _last_playback_version = event_version
 
     db = get_firestore_client()
-    # Drop cached snapshot first so invalidation reads the latest state.
-    _snapshot_cache.data = None
-    _snapshot_cache.expires_at_ms = 0
+    _clear_snapshot_cache()
     snapshot = await _get_state_snapshot(db)
     poll = snapshot.get("poll", {})
-    _tally_cache.clear()
-    _listener_count_cache["value"] = None
-    _listener_count_cache["fetched_at_ms"] = 0
+    _reset_tally_cache()
+    _reset_listener_count_cache()
     _invalidate_state(
         poll.get("voteId"),
         event_version if event_version is not None else poll.get("version"),
@@ -477,13 +489,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     initial_tallies = await _get_tallies_cached(redis_client, vote_id)
     yield _format_sse(
         "TALLY_SNAPSHOT",
-        {
-            "voteId": vote_id,
-            "ts": _utc_ms(),
-            "tallies": initial_tallies,
-            "status": snapshot.get("poll", {}).get("status"),
-            "winnerOption": snapshot.get("poll", {}).get("winnerOption") or _winner_for_vote(vote_id),
-        },
+        _build_tally_snapshot_payload(vote_id, initial_tallies, snapshot),
     )
 
     now_loop = asyncio.get_event_loop().time()
@@ -533,13 +539,7 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
             current_snapshot = await _get_state_snapshot(db)
             yield _format_sse(
                 "TALLY_SNAPSHOT",
-                {
-                    "voteId": vote_id,
-                    "ts": _utc_ms(),
-                    "tallies": tallies,
-                    "status": current_snapshot.get("poll", {}).get("status"),
-                    "winnerOption": current_snapshot.get("poll", {}).get("winnerOption") or _winner_for_vote(vote_id),
-                },
+                _build_tally_snapshot_payload(vote_id, tallies, current_snapshot),
             )
             last_snapshot_at = now
 
