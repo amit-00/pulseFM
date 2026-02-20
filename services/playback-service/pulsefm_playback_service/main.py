@@ -35,10 +35,11 @@ DEFAULT_STARTUP_DELAY_SECONDS = 30
 VOTE_CLOSE_LEAD_SECONDS = 60
 
 
-def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:
+def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None, version: int | None = None) -> str:
     suffix = vote_id or ""
     timestamp = str(int(ends_at.timestamp())) if ends_at else ""
-    return f"playback-{suffix}-{timestamp}"
+    version_suffix = str(version) if version is not None else ""
+    return f"playback-{suffix}-{timestamp}-{version_suffix}"
 
 
 def _build_vote_close_task_id(vote_id: str, version: int) -> str:
@@ -103,6 +104,8 @@ async def _ensure_playback_tick_scheduled() -> None:
         return
     ends_at = station.get("endAt")
     vote_id = station.get("voteId")
+    current_version = int(station.get("version") or 0)
+    next_version = current_version + 1
     delay_seconds = _remaining_delay_seconds(ends_at)
     if delay_seconds is None:
         delay_seconds = DEFAULT_STARTUP_DELAY_SECONDS
@@ -112,16 +115,19 @@ async def _ensure_playback_tick_scheduled() -> None:
             parsed_end_at = _parse_timestamp(ends_at)
         except ValueError:
             parsed_end_at = None
-    task_id = _build_tick_task_id(vote_id, parsed_end_at)
+    task_id = _build_tick_task_id(vote_id, parsed_end_at, next_version)
     enqueue_json_task_with_delay(
         settings.playback_queue,
         settings.playback_tick_url.rstrip("/") + "/tick",
-        {},
+        {"version": next_version},
         delay_seconds,
         task_id=task_id,
         ignore_already_exists=True,
     )
-    logger.info("Startup tick scheduled", extra={"voteId": vote_id, "delaySeconds": delay_seconds})
+    logger.info(
+        "Startup tick scheduled",
+        extra={"voteId": vote_id, "delaySeconds": delay_seconds, "version": next_version},
+    )
 
 
 async def _get_ready_song(db, exclude_vote_id: str | None = None) -> Optional[Dict[str, Any]]:
@@ -415,7 +421,17 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.post("/tick")
-async def tick() -> Dict[str, str]:
+async def tick(payload: Dict[str, Any]) -> Dict[str, Any]:
+    version_raw = payload.get("version")
+    if version_raw is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version is required")
+    try:
+        request_version = int(version_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be an integer")
+    if request_version <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be positive")
+
     db = get_firestore_client()
 
     station_ref = db.collection(settings.stations_collection).document("main")
@@ -429,6 +445,14 @@ async def tick() -> Dict[str, str]:
         if not station_snap.exists:
             raise ValueError("stations/main not found")
         station = station_snap.to_dict() or {}
+        current_version = int(station.get("version") or 0)
+        if request_version <= current_version:
+            return {
+                "action": "noop",
+                "reason": "stale_version",
+                "currentVersion": current_version,
+                "requestVersion": request_version,
+            }
 
         next_data = station.get("next") or {}
         current_vote_id = next_data.get("voteId")
@@ -479,6 +503,7 @@ async def tick() -> Dict[str, str]:
             "startAt": now,
             "endAt": ends_at,
             "durationMs": duration_ms,
+            "version": request_version,
             "next": {
                 "voteId": candidate_song["id"],
                 "duration": next_duration_ms,
@@ -499,6 +524,7 @@ async def tick() -> Dict[str, str]:
             "nextVoteId": candidate_song["id"],
             "nextDurationMs": next_duration_ms,
             "nextStubbed": bool(candidate_song.get("stubbed")),
+            "version": request_version,
         }
 
     transaction = db.transaction()
@@ -511,9 +537,16 @@ async def tick() -> Dict[str, str]:
         logger.exception("Playback transaction failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to run playback transaction")
 
+    if result.get("action") == "noop":
+        return {"status": "noop", **result}
+
     logger.info(
         "Selected next song",
-        extra={"voteId": result.get("nextVoteId"), "stubbed": result.get("nextStubbed", False)},
+        extra={
+            "voteId": result.get("nextVoteId"),
+            "stubbed": result.get("nextStubbed", False),
+            "version": result.get("version"),
+        },
     )
 
     song_duration_ms = int(result["durationMs"])
@@ -615,18 +648,26 @@ async def tick() -> Dict[str, str]:
         },
     )
 
-    task_id = _build_tick_task_id(result.get("voteId"), result.get("endsAt"))
+    next_tick_version = request_version + 1
+    task_id = _build_tick_task_id(result.get("voteId"), result.get("endsAt"), next_tick_version)
     enqueue_json_task_with_delay(
         settings.playback_queue,
         playback_tick_url,
-        {},
+        {"version": next_tick_version},
         delay_seconds,
         task_id=task_id,
         ignore_already_exists=True,
     )
-    logger.info("Scheduled next tick", extra={"voteId": result.get("voteId"), "delaySeconds": delay_seconds})
+    logger.info(
+        "Scheduled next tick",
+        extra={
+            "voteId": result.get("voteId"),
+            "delaySeconds": delay_seconds,
+            "version": next_tick_version,
+        },
+    )
 
-    return {"status": "ok"}
+    return {"status": "ok", "version": request_version}
 
 
 @app.get("/health")
