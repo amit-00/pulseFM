@@ -120,6 +120,12 @@ resource "google_storage_bucket_iam_member" "encoder_bucket_access" {
   member = "serviceAccount:${google_service_account.encoder.email}"
 }
 
+resource "google_storage_bucket_iam_member" "modal_worker_bucket_access" {
+  bucket = google_storage_bucket.generated_songs.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.modal_worker.email}"
+}
+
 resource "google_storage_bucket_iam_member" "eventarc_bucket_reader" {
   bucket = google_storage_bucket.generated_songs.name
   role   = "roles/storage.objectViewer"
@@ -176,6 +182,12 @@ resource "google_service_account_iam_member" "terraform_act_as_tally_function" {
 
 resource "google_service_account_iam_member" "terraform_act_as_modal_dispatcher" {
   service_account_id = google_service_account.modal_dispatcher.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_modal_worker" {
+  service_account_id = google_service_account.modal_worker.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }

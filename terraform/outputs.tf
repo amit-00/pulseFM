@@ -62,6 +62,10 @@ output "nextjs_server_service_account" {
   value = google_service_account.nextjs_server.email
 }
 
+output "modal_worker_service_account" {
+  value = google_service_account.modal_worker.email
+}
+
 output "cdn_hostname" {
   value = var.cdn_hostname
 }
