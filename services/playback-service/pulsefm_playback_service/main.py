@@ -1,9 +1,9 @@
 import logging
-import json
 import random
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 import uuid
 
 from fastapi import FastAPI, HTTPException, status
@@ -33,26 +33,35 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STARTUP_DELAY_SECONDS = 30
 VOTE_CLOSE_LEAD_SECONDS = 60
+DEFAULT_SNAPSHOT_TTL_SECONDS = 3600
 
 
-def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None, version: int | None = None) -> str:
-    suffix = vote_id or ""
-    timestamp = str(int(ends_at.timestamp())) if ends_at else ""
-    version_suffix = str(version) if version is not None else ""
-    return f"playback-{suffix}-{timestamp}-{version_suffix}"
-
-
-def _build_vote_close_task_id(vote_id: str, version: int) -> str:
-    return f"vote-close-{vote_id}-{version}"
-
-
-async def _get_station_state(db) -> Dict[str, Any] | None:
-    doc = await db.collection(settings.stations_collection).document("main").get()
-    return doc.to_dict() if doc.exists else None
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _to_epoch_ms(value: Any) -> int | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return int(value.timestamp() * 1000)
+    if isinstance(value, (int, float)):
+        return int(value)
+    return None
+
+
+def _parse_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_timestamp(value: Any) -> datetime:
@@ -74,11 +83,58 @@ def _remaining_delay_seconds(ends_at: Any) -> int | None:
     return max(0, int(delta))
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await _ensure_playback_tick_scheduled()
-    yield
+def _tick_url() -> str:
+    return settings.playback_tick_url.rstrip("/") + "/tick"
 
+
+def _vote_close_url() -> str:
+    return settings.playback_tick_url.rstrip("/") + "/vote/close"
+
+
+def _validate_tick_version(payload: Dict[str, Any]) -> int:
+    version_raw = payload.get("version")
+    if version_raw is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version is required")
+    try:
+        version = int(version_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be an integer")
+    if version <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be positive")
+    return version
+
+
+def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None, version: int | None = None) -> str:
+    suffix = vote_id or ""
+    timestamp = str(int(ends_at.timestamp())) if ends_at else ""
+    version_suffix = str(version) if version is not None else ""
+    return f"playback-{suffix}-{timestamp}-{version_suffix}"
+
+
+def _build_vote_close_task_id(vote_id: str, version: int) -> str:
+    return f"vote-close-{vote_id}-{version}"
+
+
+# ---------------------------------------------------------------------------
+# SongRotationResult
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SongRotationResult:
+    start_at: datetime
+    ends_at: datetime
+    duration_ms: int
+    vote_id: str
+    next_vote_id: str
+    next_duration_ms: int
+    next_stubbed: bool
+    version: int
+
+
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
 
 _db: AsyncClient | None = None
 
@@ -90,7 +146,33 @@ def get_firestore_client() -> AsyncClient:
     return _db
 
 
+@asynccontextmanager
+async def lifespan(a: FastAPI):
+    await _ensure_playback_tick_scheduled()
+    yield
+
+
 app = FastAPI(title="PulseFM Playback Service", version="1.0.0", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Firestore helpers
+# ---------------------------------------------------------------------------
+
+
+async def _get_station_state(db: AsyncClient) -> Dict[str, Any] | None:
+    doc = await db.collection(settings.stations_collection).document("main").get()
+    return doc.to_dict() if doc.exists else None
+
+
+async def _get_current_state(db: AsyncClient) -> Dict[str, Any] | None:
+    doc = await db.collection(settings.vote_state_collection).document("current").get()
+    return doc.to_dict() if doc.exists else None
+
+
+# ---------------------------------------------------------------------------
+# Startup
+# ---------------------------------------------------------------------------
 
 
 async def _ensure_playback_tick_scheduled() -> None:
@@ -106,9 +188,7 @@ async def _ensure_playback_tick_scheduled() -> None:
     vote_id = station.get("voteId")
     current_version = int(station.get("version") or 0)
     next_version = current_version + 1
-    delay_seconds = _remaining_delay_seconds(ends_at)
-    if delay_seconds is None:
-        delay_seconds = DEFAULT_STARTUP_DELAY_SECONDS
+    delay_seconds = _remaining_delay_seconds(ends_at) or DEFAULT_STARTUP_DELAY_SECONDS
     parsed_end_at = None
     if ends_at:
         try:
@@ -118,7 +198,7 @@ async def _ensure_playback_tick_scheduled() -> None:
     task_id = _build_tick_task_id(vote_id, parsed_end_at, next_version)
     enqueue_json_task_with_delay(
         settings.playback_queue,
-        settings.playback_tick_url.rstrip("/") + "/tick",
+        _tick_url(),
         {"version": next_version},
         delay_seconds,
         task_id=task_id,
@@ -130,44 +210,9 @@ async def _ensure_playback_tick_scheduled() -> None:
     )
 
 
-async def _get_ready_song(db, exclude_vote_id: str | None = None) -> Optional[Dict[str, Any]]:
-    query = (
-        db.collection(settings.songs_collection)
-        .where("status", "==", "ready")
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(5)
-    )
-    docs = await query.get()
-    if not docs:
-        return None
-
-    for doc in docs:
-        if exclude_vote_id and doc.id == exclude_vote_id:
-            continue
-        data = doc.to_dict() or {}
-        return {
-            "id": doc.id,
-            "duration": data.get("durationMs"),
-            "createdAt": data.get("createdAt"),
-        }
-    return None
-
-
-async def _get_stubbed_song(db) -> Dict[str, Any]:
-    doc = await db.collection(settings.songs_collection).document("stubbed").get()
-    if not doc.exists:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No ready song or stubbed song")
-    data = doc.to_dict() or {}
-    vote_id = doc.id
-    duration = data.get("durationMs")
-    if duration is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stubbed song missing fields")
-    return {"id": vote_id, "duration": duration, "stubbed": True}
-
-
-async def _get_current_state(db: AsyncClient) -> Dict[str, Any] | None:
-    doc = await db.collection(settings.vote_state_collection).document("current").get()
-    return doc.to_dict() if doc.exists else None
+# ---------------------------------------------------------------------------
+# Vote building
+# ---------------------------------------------------------------------------
 
 
 def _build_vote(vote_id: str, start_at: datetime, duration_ms: int, options: list[str], version: int) -> Dict[str, Any]:
@@ -202,6 +247,11 @@ def _pick_winner(tallies: Dict[str, Any]) -> str | None:
     return random.choice(tied) if tied else None
 
 
+# ---------------------------------------------------------------------------
+# Publishing helpers
+# ---------------------------------------------------------------------------
+
+
 def _publish_vote_event(event: str, vote_id: str, winner_option: str | None = None) -> None:
     payload: Dict[str, Any] = {"event": event, "voteId": vote_id}
     if winner_option is not None:
@@ -214,6 +264,11 @@ def _publish_playback_event(event: str, payload: Dict[str, Any]) -> None:
     publish_json(settings.project_id or None, settings.playback_events_topic, event_payload)
 
 
+# ---------------------------------------------------------------------------
+# Redis helpers
+# ---------------------------------------------------------------------------
+
+
 async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) -> bool:
     client = get_redis_client()
     snapshot = await get_playback_current_snapshot(client)
@@ -223,21 +278,9 @@ async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) ->
     next_song = snapshot.get("nextSong")
     if not isinstance(next_song, dict):
         next_song = {}
-    current_vote_id = next_song.get("voteId")
-    current_duration = next_song.get("durationMs")
-    desired_duration = int(duration_ms)
-    parsed_current_duration = current_duration
-    if not isinstance(parsed_current_duration, int):
-        try:
-            parsed_current_duration = int(parsed_current_duration)
-        except (TypeError, ValueError):
-            parsed_current_duration = None
 
-    redis_changed = (
-        current_vote_id != vote_id
-        or parsed_current_duration != desired_duration
-    )
-    if not redis_changed:
+    desired_duration = int(duration_ms)
+    if next_song.get("voteId") == vote_id and _parse_int(next_song.get("durationMs")) == desired_duration:
         return False
 
     next_song["voteId"] = vote_id
@@ -245,12 +288,36 @@ async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) ->
     snapshot["nextSong"] = next_song
 
     ttl = await client.ttl(playback_current_key())  # type: ignore[misc]
-    if ttl and int(ttl) > 0:
-        await set_playback_current_snapshot(client, snapshot, int(ttl))
-        return True
-    payload = json.dumps(snapshot, separators=(",", ":"))
-    await client.set(playback_current_key(), payload)  # type: ignore[misc]
+    effective_ttl = int(ttl) if ttl and int(ttl) > 0 else DEFAULT_SNAPSHOT_TTL_SECONDS
+    await set_playback_current_snapshot(client, snapshot, effective_ttl)
     return True
+
+
+async def _update_redis_on_open(
+    vote_id: str,
+    start_at: datetime,
+    end_at: datetime,
+    duration_ms: int,
+    options: list[str],
+    snapshot: Dict[str, Any],
+) -> None:
+    client = get_redis_client()
+    current_ttl_seconds = max(1, int(duration_ms / 1000))
+    state_ttl_seconds = max(1, int((end_at + timedelta(hours=1) - _utc_now()).total_seconds()))
+
+    await init_poll_open_atomic(
+        client,
+        vote_id,
+        snapshot,
+        current_ttl_seconds,
+        state_ttl_seconds,
+        options,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Vote operations
+# ---------------------------------------------------------------------------
 
 
 async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -259,29 +326,28 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("voteId missing from voteState/current")
     try:
         tallies = await get_poll_tallies(get_redis_client(), vote_id)
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to load tallies from Redis", extra={"voteId": vote_id})
-        raise exc
+        raise
     if not tallies:
         tallies = {option: 0 for option in (state.get("options") or [])}
     winner_option = _pick_winner(tallies)
 
-    closed_at = SERVER_TIMESTAMP
     window_doc = {
         **state,
         "status": "CLOSED",
         "winnerOption": winner_option,
         "tallies": tallies,
-        "closedAt": closed_at,
+        "closedAt": SERVER_TIMESTAMP,
     }
 
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
 
     try:
         await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED")
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to update playback snapshot poll status on close", extra={"voteId": vote_id})
-        raise exc
+        raise
 
     logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
     _publish_vote_event("CLOSE", vote_id, winner_option)
@@ -312,28 +378,6 @@ async def _close_current_vote_if_matches(
     return {"action": "closed", "voteId": current_vote_id, "version": current_version}
 
 
-async def _update_redis_on_open(
-    vote_id: str,
-    start_at: datetime,
-    end_at: datetime,
-    duration_ms: int,
-    options: list[str],
-    snapshot: Dict[str, Any],
-) -> None:
-    client = get_redis_client()
-    current_ttl_seconds = max(1, int(duration_ms / 1000))
-    state_ttl_seconds = max(1, int((end_at + timedelta(hours=1) - _utc_now()).total_seconds()))
-
-    await init_poll_open_atomic(
-        client,
-        vote_id,
-        snapshot,
-        current_ttl_seconds,
-        state_ttl_seconds,
-        options,
-    )
-
-
 async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Dict[str, Any]:
     vote_id = str(uuid.uuid4())
     start_at = _utc_now()
@@ -345,6 +389,192 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
     _publish_vote_event("OPEN", vote_id)
 
     return window_doc
+
+
+# ---------------------------------------------------------------------------
+# Tick orchestration helpers
+# ---------------------------------------------------------------------------
+
+
+async def _rotate_song(db: AsyncClient, request_version: int) -> SongRotationResult | None:
+    station_ref = db.collection(settings.stations_collection).document("main")
+    songs_ref = db.collection(settings.songs_collection)
+
+    @async_transactional
+    async def _txn(transaction: AsyncTransaction) -> dict | None:
+        now = _utc_now()
+
+        station_snap = await station_ref.get(transaction=transaction)
+        if not station_snap.exists:
+            raise ValueError("stations/main not found")
+        station = station_snap.to_dict() or {}
+        current_version = int(station.get("version") or 0)
+        if request_version <= current_version:
+            return None
+
+        next_data = station.get("next") or {}
+        current_vote_id = next_data.get("voteId")
+        current_duration = next_data.get("durationMs") or next_data.get("duration")
+        if current_vote_id is None or current_duration is None:
+            raise ValueError("stations/main.next is missing fields")
+
+        duration_ms = int(current_duration)
+        ends_at = now + timedelta(milliseconds=duration_ms)
+
+        candidate_song: dict | None = None
+        query = (
+            songs_ref
+            .where("status", "==", "ready")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(5)
+        )
+        ready_docs = await query.get(transaction=transaction)
+        for doc in ready_docs:
+            if doc.id == current_vote_id:
+                continue
+            data = doc.to_dict() or {}
+            candidate_song = {"id": doc.id, "duration": data.get("durationMs"), "stubbed": False}
+            break
+
+        if candidate_song is None:
+            stubbed_snap = await songs_ref.document("stubbed").get(transaction=transaction)
+            if not stubbed_snap.exists:
+                raise ValueError("No ready song or stubbed song")
+            stubbed_data = stubbed_snap.to_dict() or {}
+            stubbed_duration = stubbed_data.get("durationMs")
+            if stubbed_duration is None:
+                raise ValueError("Stubbed song missing fields")
+            candidate_song = {"id": "stubbed", "duration": stubbed_duration, "stubbed": True}
+
+        next_duration_ms = int(candidate_song["duration"])
+
+        transaction.update(station_ref, {
+            "voteId": current_vote_id,
+            "startAt": now,
+            "endAt": ends_at,
+            "durationMs": duration_ms,
+            "version": request_version,
+            "next": {
+                "voteId": candidate_song["id"],
+                "duration": next_duration_ms,
+                "durationMs": next_duration_ms,
+            },
+        })
+
+        if current_vote_id != "stubbed":
+            transaction.update(songs_ref.document(current_vote_id), {"status": "played"})
+        if not candidate_song.get("stubbed"):
+            transaction.update(songs_ref.document(candidate_song["id"]), {"status": "queued"})
+
+        return {
+            "start_at": now,
+            "ends_at": ends_at,
+            "duration_ms": duration_ms,
+            "vote_id": current_vote_id,
+            "next_vote_id": candidate_song["id"],
+            "next_duration_ms": next_duration_ms,
+            "next_stubbed": bool(candidate_song.get("stubbed")),
+            "version": request_version,
+        }
+
+    transaction = db.transaction()
+    try:
+        result = await _txn(transaction)
+    except ValueError as exc:
+        logger.exception("Playback transaction failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except Exception:
+        logger.exception("Playback transaction failed")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to run playback transaction")
+
+    if result is None:
+        return None
+    return SongRotationResult(**result)
+
+
+async def _rotate_vote(db: AsyncClient, song_duration_ms: int) -> Dict[str, Any]:
+    vote_duration_ms = max(0, song_duration_ms - (VOTE_CLOSE_LEAD_SECONDS * 1000))
+    state = await _get_current_state(db)
+    if state and state.get("status") == "OPEN":
+        await _close_vote(db, state)
+    version = int(state.get("version") or 0) + 1 if state else 1
+    return await _open_next_vote(db, version, vote_duration_ms)
+
+
+def _build_playback_snapshot(rotation: SongRotationResult, window: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "currentSong": {
+            "voteId": rotation.vote_id,
+            "startAt": _to_epoch_ms(rotation.start_at),
+            "endAt": _to_epoch_ms(rotation.ends_at),
+            "durationMs": rotation.duration_ms,
+        },
+        "nextSong": {
+            "voteId": rotation.next_vote_id,
+            "durationMs": rotation.next_duration_ms,
+        },
+        "poll": {
+            "voteId": window.get("voteId"),
+            "options": window.get("options"),
+            "version": window.get("version"),
+            "status": "OPEN",
+            "endAt": _to_epoch_ms(window.get("endAt")),
+        },
+    }
+
+
+def _publish_changeover_events(rotation: SongRotationResult, request_version: int) -> None:
+    _publish_playback_event(
+        "NEXT-SONG-CHANGED",
+        {"voteId": rotation.next_vote_id, "durationMs": rotation.next_duration_ms, "version": request_version},
+    )
+    _publish_playback_event("CHANGEOVER", {"durationMs": rotation.duration_ms, "version": request_version})
+
+
+def _schedule_next_tasks(rotation: SongRotationResult, window: Dict[str, Any], request_version: int) -> None:
+    if not settings.playback_tick_url:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
+
+    close_vote_id = window.get("voteId")
+    close_version = int(window.get("version") or 0)
+    try:
+        close_delay = max(0.0, (window["endAt"] - _utc_now()).total_seconds())
+    except Exception:
+        vote_duration_ms = max(0, rotation.duration_ms - (VOTE_CLOSE_LEAD_SECONDS * 1000))
+        close_delay = max(0.0, vote_duration_ms / 1000)
+
+    enqueue_json_task_with_delay(
+        settings.playback_queue,
+        _vote_close_url(),
+        {"voteId": close_vote_id, "version": close_version},
+        close_delay,
+        task_id=_build_vote_close_task_id(str(close_vote_id), close_version),
+        ignore_already_exists=True,
+    )
+    logger.info(
+        "Scheduled vote close",
+        extra={"voteId": close_vote_id, "version": close_version, "delaySeconds": close_delay},
+    )
+
+    next_tick_version = request_version + 1
+    delay_seconds = rotation.duration_ms / 1000
+    enqueue_json_task_with_delay(
+        settings.playback_queue,
+        _tick_url(),
+        {"version": next_tick_version},
+        delay_seconds,
+        task_id=_build_tick_task_id(rotation.vote_id, rotation.ends_at, next_tick_version),
+        ignore_already_exists=True,
+    )
+    logger.info(
+        "Scheduled next tick",
+        extra={"voteId": rotation.vote_id, "delaySeconds": delay_seconds, "version": next_tick_version},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route handlers
+# ---------------------------------------------------------------------------
 
 
 @app.post("/vote/close")
@@ -378,13 +608,8 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(vote_id_raw, str) or not vote_id_raw.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
     if not isinstance(duration_raw, int) or duration_raw <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs is required and must be a positive integer")
-    try:
-        duration_ms = int(duration_raw)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be an integer")
-    if duration_ms <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be positive")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be a positive integer")
+    duration_ms = duration_raw
 
     vote_id = vote_id_raw.strip()
     db = get_firestore_client()
@@ -443,8 +668,8 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
     redis_changed: bool | None = None
     if result.get("action") in {"updated", "already_set"}:
         try:
-            canonical_vote_id = str(result.get("voteId"))
-            canonical_duration_ms = int(result.get("durationMs"))
+            canonical_vote_id = str(result["voteId"])
+            canonical_duration_ms = int(result["durationMs"])
             canonical_version = int(result.get("version") or 0)
             redis_changed = await _update_playback_next_song_snapshot(canonical_vote_id, canonical_duration_ms)
             if redis_changed:
@@ -465,252 +690,42 @@ async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.post("/tick")
 async def tick(payload: Dict[str, Any]) -> Dict[str, Any]:
-    version_raw = payload.get("version")
-    if version_raw is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version is required")
-    try:
-        request_version = int(version_raw)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be an integer")
-    if request_version <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be positive")
-
+    request_version = _validate_tick_version(payload)
     db = get_firestore_client()
 
-    station_ref = db.collection(settings.stations_collection).document("main")
-    songs_ref = db.collection(settings.songs_collection)
-
-    @async_transactional
-    async def _transaction_fn(transaction: AsyncTransaction) -> Dict[str, Any]:
-        now = _utc_now()
-
-        station_snap = await station_ref.get(transaction=transaction)
-        if not station_snap.exists:
-            raise ValueError("stations/main not found")
-        station = station_snap.to_dict() or {}
-        current_version = int(station.get("version") or 0)
-        if request_version <= current_version:
-            return {
-                "action": "noop",
-                "reason": "stale_version",
-                "currentVersion": current_version,
-                "requestVersion": request_version,
-            }
-
-        next_data = station.get("next") or {}
-        current_vote_id = next_data.get("voteId")
-        current_duration = next_data.get("durationMs") or next_data.get("duration")
-        if current_vote_id is None or current_duration is None:
-            raise ValueError("stations/main.next is missing fields")
-
-        duration_ms = int(current_duration)
-        ends_at = now + timedelta(milliseconds=duration_ms)
-
-        candidate_song: Dict[str, Any] | None = None
-        query = (
-            songs_ref
-            .where("status", "==", "ready")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(5)
-        )
-        ready_docs = await query.get(transaction=transaction)
-        for doc in ready_docs:
-            if doc.id == current_vote_id:
-                continue
-            data = doc.to_dict() or {}
-            candidate_song = {
-                "id": doc.id,
-                "duration": data.get("durationMs"),
-                "stubbed": False,
-            }
-            break
-
-        if candidate_song is None:
-            stubbed_snap = await songs_ref.document("stubbed").get(transaction=transaction)
-            if not stubbed_snap.exists:
-                raise ValueError("No ready song or stubbed song")
-            stubbed_data = stubbed_snap.to_dict() or {}
-            stubbed_duration = stubbed_data.get("durationMs")
-            if stubbed_duration is None:
-                raise ValueError("Stubbed song missing fields")
-            candidate_song = {
-                "id": "stubbed",
-                "duration": stubbed_duration,
-                "stubbed": True,
-            }
-
-        next_duration_ms = int(candidate_song["duration"])
-
-        transaction.update(station_ref, {
-            "voteId": current_vote_id,
-            "startAt": now,
-            "endAt": ends_at,
-            "durationMs": duration_ms,
-            "version": request_version,
-            "next": {
-                "voteId": candidate_song["id"],
-                "duration": next_duration_ms,
-                "durationMs": next_duration_ms,
-            },
-        })
-
-        if current_vote_id != "stubbed":
-            transaction.update(songs_ref.document(current_vote_id), {"status": "played"})
-        if not candidate_song.get("stubbed"):
-            transaction.update(songs_ref.document(candidate_song["id"]), {"status": "queued"})
-
-        return {
-            "startAt": now,
-            "endsAt": ends_at,
-            "durationMs": duration_ms,
-            "voteId": current_vote_id,
-            "nextVoteId": candidate_song["id"],
-            "nextDurationMs": next_duration_ms,
-            "nextStubbed": bool(candidate_song.get("stubbed")),
-            "version": request_version,
-        }
-
-    transaction = db.transaction()
-    try:
-        result = await _transaction_fn(transaction)
-    except ValueError as exc:
-        logger.exception("Playback transaction failed")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-    except Exception:
-        logger.exception("Playback transaction failed")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to run playback transaction")
-
-    if result.get("action") == "noop":
-        return {"status": "noop", **result}
+    rotation = await _rotate_song(db, request_version)
+    if rotation is None:
+        return {"status": "noop", "reason": "stale_version", "requestVersion": request_version}
 
     logger.info(
         "Selected next song",
-        extra={
-            "voteId": result.get("nextVoteId"),
-            "stubbed": result.get("nextStubbed", False),
-            "version": result.get("version"),
-        },
+        extra={"voteId": rotation.next_vote_id, "stubbed": rotation.next_stubbed, "version": rotation.version},
     )
 
-    song_duration_ms = int(result["durationMs"])
-    vote_duration_ms = max(0, song_duration_ms - (VOTE_CLOSE_LEAD_SECONDS * 1000))
     try:
-        state = await _get_current_state(db)
-        if state and state.get("status") == "OPEN":
-            await _close_vote(db, state)
-            version = int(state.get("version") or 0) + 1
-        else:
-            version = int(state.get("version") or 0) + 1 if state else 1
-        window = await _open_next_vote(db, version, vote_duration_ms)
+        window = await _rotate_vote(db, rotation.duration_ms)
     except Exception:
         logger.exception("Failed to rotate vote")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to rotate vote")
 
     try:
-        current_start_at = result.get("startAt")
-        current_end_at = result.get("endsAt")
-        current_duration_ms = int(result["durationMs"])
-        current_vote_id = result.get("voteId")
-        current_start_ms = int(current_start_at.timestamp() * 1000) if isinstance(current_start_at, datetime) else None
-        current_end_ms = int(current_end_at.timestamp() * 1000) if isinstance(current_end_at, datetime) else None
-        snapshot = {
-            "currentSong": {
-                "voteId": current_vote_id,
-                "startAt": current_start_ms,
-                "endAt": current_end_ms,
-                "durationMs": current_duration_ms,
-            },
-            "nextSong": {
-                "voteId": result.get("nextVoteId"),
-                "durationMs": result.get("nextDurationMs"),
-            },
-            "poll": {
-                "voteId": window.get("voteId"),
-                "options": window.get("options"),
-                "version": window.get("version"),
-                "status": "OPEN",
-                "endAt": int(window["endAt"].timestamp() * 1000) if isinstance(window.get("endAt"), datetime) else None,
-            },
-        }
+        snapshot = _build_playback_snapshot(rotation, window)
         await _update_redis_on_open(
-            window["voteId"],
-            window["startAt"],
-            window["endAt"],
-            song_duration_ms,
-            window["options"],
-            snapshot,
+            window["voteId"], window["startAt"], window["endAt"],
+            rotation.duration_ms, window["options"], snapshot,
         )
     except Exception:
         logger.exception("Failed to update Redis playback snapshot", extra={"voteId": window.get("voteId")})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
 
     try:
-        _publish_playback_event(
-            "NEXT-SONG-CHANGED",
-            {
-                "voteId": result.get("nextVoteId"),
-                "durationMs": result.get("nextDurationMs"),
-                "version": request_version,
-            },
-        )
-        _publish_playback_event("CHANGEOVER", {"durationMs": result["durationMs"], "version": request_version})
+        _publish_changeover_events(rotation, request_version)
     except Exception:
-        logger.exception("Failed to publish playback changeover", extra={"durationMs": result["durationMs"]})
+        logger.exception("Failed to publish playback changeover", extra={"durationMs": rotation.duration_ms})
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")
-    logger.info("Published playback changeover", extra={"durationMs": result["durationMs"]})
+    logger.info("Published playback changeover", extra={"durationMs": rotation.duration_ms})
 
-    if not settings.playback_tick_url:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
-
-    playback_tick_url = settings.playback_tick_url.rstrip("/") + "/tick"
-    delay_seconds = song_duration_ms / 1000
-
-    vote_close_url = settings.playback_tick_url.rstrip("/") + "/vote/close"
-    close_delay_seconds = 0.0
-    try:
-        close_delay_seconds = max(0.0, (window["endAt"] - _utc_now()).total_seconds())
-    except Exception:
-        close_delay_seconds = max(0.0, vote_duration_ms / 1000)
-    close_vote_id = window.get("voteId")
-    close_version = int(window.get("version") or 0)
-    close_task_id = _build_vote_close_task_id(str(close_vote_id), close_version)
-    
-    enqueue_json_task_with_delay(
-        settings.playback_queue,
-        vote_close_url,
-        {"voteId": close_vote_id, "version": close_version},
-        close_delay_seconds,
-        task_id=close_task_id,
-        ignore_already_exists=True,
-    )
-    logger.info(
-        "Scheduled vote close",
-        extra={
-            "voteId": close_vote_id,
-            "version": close_version,
-            "delaySeconds": close_delay_seconds,
-        },
-    )
-
-    next_tick_version = request_version + 1
-    task_id = _build_tick_task_id(result.get("voteId"), result.get("endsAt"), next_tick_version)
-    enqueue_json_task_with_delay(
-        settings.playback_queue,
-        playback_tick_url,
-        {"version": next_tick_version},
-        delay_seconds,
-        task_id=task_id,
-        ignore_already_exists=True,
-    )
-    logger.info(
-        "Scheduled next tick",
-        extra={
-            "voteId": result.get("voteId"),
-            "delaySeconds": delay_seconds,
-            "version": next_tick_version,
-        },
-    )
-
+    _schedule_next_tasks(rotation, window, request_version)
     return {"status": "ok", "version": request_version}
 
 
