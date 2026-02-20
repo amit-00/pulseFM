@@ -109,14 +109,18 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
 
 @app.cls(
     image=image,
+    cpu=4,
+    memory=16384,
     gpu="L4",
     timeout=600,
     secrets=[gcs_secret],
+    enable_memory_snapshot=True,
+    scaledown_window=120,
 )
 class MusicGenerator:
     """GPU class for music generation with proper container lifecycle management."""
     
-    @modal.enter()
+    @modal.enter(snap=True)
     def load_model(self):
         """Load ACE-Step model once per container lifecycle."""
         from acestep.pipeline_ace_step import ACEStepPipeline
