@@ -24,6 +24,7 @@ _db: AsyncClient | None = None
 
 _last_invalidated: Dict[str, Any] | None = None
 _last_vote_closed: Dict[str, Any] | None = None
+_last_next_song_changed: Dict[str, Any] | None = None
 _tally_cache: Dict[str, Dict[str, Any]] = {}
 _tally_cache_lock = asyncio.Lock()
 TALLY_CACHE_STALENESS_MS = 500
@@ -285,6 +286,22 @@ def _record_vote_closed(vote_id: str | None, winner_option: str | None) -> None:
     }
 
 
+def _record_next_song_changed(vote_id: str | None, duration_ms: Any) -> None:
+    global _last_next_song_changed
+    parsed_duration: int | None = None
+    try:
+        if duration_ms is not None:
+            parsed_duration = int(duration_ms)
+    except (TypeError, ValueError):
+        parsed_duration = None
+
+    _last_next_song_changed = {
+        "voteId": vote_id,
+        "durationMs": parsed_duration,
+        "ts": _utc_ms(),
+    }
+
+
 def _winner_for_vote(vote_id: str | None) -> str | None:
     if not vote_id or not _last_vote_closed:
         return None
@@ -318,7 +335,17 @@ async def tally_event(payload: Dict[str, Any]) -> Dict[str, str]:
 @app.post("/events/playback")
 async def playback_event(payload: Dict[str, Any]) -> Dict[str, str]:
     message = decode_pubsub_json(payload)
-    if message.get("event") != "CHANGEOVER":
+    event_type = message.get("event")
+
+    if event_type == "NEXT-SONG-CHANGED":
+        _record_next_song_changed(message.get("voteId"), message.get("durationMs"))
+        # Force a fresh state read so /state and stream snapshot paths pick up updated nextSong quickly.
+        _snapshot_cache.data = None
+        _snapshot_cache.expires_at_ms = 0
+        logger.info("Recorded next-song change event", extra={"voteId": message.get("voteId")})
+        return {"status": "ok"}
+
+    if event_type != "CHANGEOVER":
         return {"status": "ignored"}
 
     db = get_firestore_client()
@@ -392,9 +419,11 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     connected_at_ms = _utc_ms()
     last_known_invalidation_ts = int((_last_invalidated or {}).get("ts", 0))
     last_known_vote_closed_ts = int((_last_vote_closed or {}).get("ts", 0))
+    last_known_next_song_changed_ts = int((_last_next_song_changed or {}).get("ts", 0))
     # Only emit SONG_CHANGED for invalidations that happen after this client connects.
     last_invalidated_at = max(connected_at_ms, last_known_invalidation_ts)
     last_vote_closed_at = max(connected_at_ms, last_known_vote_closed_ts)
+    last_next_song_changed_at = max(connected_at_ms, last_known_next_song_changed_ts)
 
     last_snapshot_at = now_loop
     last_delta_at = 0.0
@@ -422,6 +451,10 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
         if _last_vote_closed and _last_vote_closed.get("ts", 0) > last_vote_closed_at:
             yield _format_sse("VOTE_CLOSED", _last_vote_closed)
             last_vote_closed_at = _last_vote_closed.get("ts", 0)
+
+        if _last_next_song_changed and _last_next_song_changed.get("ts", 0) > last_next_song_changed_at:
+            yield _format_sse("NEXT-SONG-CHANGED", _last_next_song_changed)
+            last_next_song_changed_at = _last_next_song_changed.get("ts", 0)
 
         if now - last_snapshot_at >= settings.tally_snapshot_interval_sec:
             tallies = await _get_tallies_cached(redis_client, vote_id)

@@ -28,6 +28,11 @@ resource "google_service_account" "heartbeat_receiver" {
   display_name = "heartbeat-receiver"
 }
 
+resource "google_service_account" "next_song_updater" {
+  account_id   = "next-song-updater"
+  display_name = "next-song-updater"
+}
+
 resource "google_service_account" "playback_service" {
   account_id   = "playback-service"
   display_name = "playback-service"

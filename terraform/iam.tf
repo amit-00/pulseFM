@@ -30,6 +30,18 @@ resource "google_project_iam_member" "heartbeat_ingress_pubsub" {
   member  = "serviceAccount:${google_service_account.heartbeat_ingress.email}"
 }
 
+resource "google_project_iam_member" "next_song_updater_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
+}
+
+resource "google_project_iam_member" "next_song_updater_pubsub" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
+}
+
 resource "google_project_iam_member" "playback_stream_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -106,6 +118,12 @@ resource "google_project_iam_member" "heartbeat_receiver_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
   member  = "serviceAccount:${google_service_account.heartbeat_receiver.email}"
+}
+
+resource "google_project_iam_member" "next_song_updater_vpc_access" {
+  project = var.project_id
+  role    = "roles/vpcaccess.user"
+  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
 }
 
 resource "google_project_iam_member" "encoder_firestore" {
@@ -200,6 +218,12 @@ resource "google_service_account_iam_member" "terraform_act_as_heartbeat_ingress
 
 resource "google_service_account_iam_member" "terraform_act_as_heartbeat_receiver" {
   service_account_id = google_service_account.heartbeat_receiver.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform.email}"
+}
+
+resource "google_service_account_iam_member" "terraform_act_as_next_song_updater" {
+  service_account_id = google_service_account.next_song_updater.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }

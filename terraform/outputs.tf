@@ -10,6 +10,10 @@ output "heartbeat_ingress_url" {
   value = google_cloudfunctions2_function.heartbeat_ingress.service_config[0].uri
 }
 
+output "next_song_updater_url" {
+  value = google_cloudfunctions2_function.next_song_updater.service_config[0].uri
+}
+
 output "encoder_url" {
   value = google_cloud_run_v2_service.encoder.uri
 }
@@ -64,6 +68,10 @@ output "nextjs_server_service_account" {
 
 output "modal_worker_service_account" {
   value = google_service_account.modal_worker.email
+}
+
+output "next_song_updater_service_account" {
+  value = google_service_account.next_song_updater.email
 }
 
 output "cdn_hostname" {

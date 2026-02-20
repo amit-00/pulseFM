@@ -214,3 +214,63 @@ resource "google_cloudfunctions2_function" "heartbeat_receiver" {
     retry_policy   = "RETRY_POLICY_RETRY"
   }
 }
+
+data "archive_file" "next_song_updater" {
+  type        = "zip"
+  source_dir  = "${path.module}/../functions/next-song-updater"
+  output_path = "${path.module}/.tmp/next-song-updater.zip"
+}
+
+resource "google_storage_bucket_object" "next_song_updater_source" {
+  name   = "next-song-updater-${data.archive_file.next_song_updater.output_md5}.zip"
+  bucket = google_storage_bucket.functions_source.name
+  source = data.archive_file.next_song_updater.output_path
+}
+
+resource "google_cloudfunctions2_function" "next_song_updater" {
+  name     = "next-song-updater"
+  location = var.region
+
+  build_config {
+    runtime     = "python311"
+    entry_point = "next_song_updater"
+
+    source {
+      storage_source {
+        bucket = google_storage_bucket.functions_source.name
+        object = google_storage_bucket_object.next_song_updater_source.name
+      }
+    }
+  }
+
+  service_config {
+    available_memory              = "256M"
+    timeout_seconds               = 30
+    service_account_email         = google_service_account.next_song_updater.email
+    vpc_connector                 = google_vpc_access_connector.memorystore.id
+    vpc_connector_egress_settings = "PRIVATE_RANGES_ONLY"
+
+    environment_variables = {
+      TARGET_BUCKET         = google_storage_bucket.generated_songs.name
+      ENCODED_PREFIX        = "encoded/"
+      STATIONS_COLLECTION   = "stations"
+      STATION_DOC_ID        = "main"
+      SONGS_COLLECTION      = "songs"
+      REDIS_HOST            = google_redis_instance.memorystore.host
+      REDIS_PORT            = tostring(google_redis_instance.memorystore.port)
+      PROJECT_ID            = var.project_id
+      PLAYBACK_EVENTS_TOPIC = google_pubsub_topic.playback_events.name
+    }
+  }
+
+  event_trigger {
+    trigger_region = var.region
+    event_type     = "google.cloud.storage.object.v1.finalized"
+    retry_policy   = "RETRY_POLICY_RETRY"
+
+    event_filters {
+      attribute = "bucket"
+      value     = google_storage_bucket.generated_songs.name
+    }
+  }
+}

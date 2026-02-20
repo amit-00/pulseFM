@@ -5,6 +5,7 @@ import { useAudioAnalyser } from "./useAudioAnalyser";
 import { ensureSession, fetchPlaybackState, fetchVoteStatus } from "@/lib/stream";
 import {
   HelloEvent,
+  NextSongChangedEvent,
   PlaybackStateSnapshot,
   SongChangedEvent,
   TallyDeltaEvent,
@@ -340,6 +341,35 @@ export function useStreamPlayer() {
         await flushSongChangedQueue();
       } catch {
         setStreamError("Failed to apply song changeover");
+      }
+    });
+
+    es.addEventListener("NEXT-SONG-CHANGED", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as NextSongChangedEvent;
+        if (!data.voteId) {
+          return;
+        }
+
+        setSnapshot((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          const next: PlaybackStateSnapshot = {
+            ...prev,
+            nextSong: {
+              voteId: data.voteId,
+              durationMs: typeof data.durationMs === "number" ? data.durationMs : null,
+            },
+          };
+          snapshotRef.current = next;
+          return next;
+        });
+
+        const inactiveSlot = getInactiveSlot(activeSlotRef.current);
+        loadTrackToSlot(inactiveSlot, getAudioUrl(data.voteId));
+      } catch {
+        setStreamError("Invalid NEXT-SONG-CHANGED payload");
       }
     });
 
