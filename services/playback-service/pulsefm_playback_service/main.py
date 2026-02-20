@@ -27,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DEFAULT_STARTUP_DELAY_SECONDS = 30
-VOTE_CLOSE_LEAD_SECONDS = 40
+VOTE_CLOSE_LEAD_SECONDS = 60
 
 
 def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None) -> str:

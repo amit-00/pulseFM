@@ -139,6 +139,7 @@ class MusicGenerator:
                 "Create the secret with: modal secret create gcs-credentials GCS_CREDENTIALS_JSON=@pulsefm-worker-key.json"
             )
 
+        logger.info(f"GCS_CREDENTIALS_JSON length: {len(credentials_json)}, first 20 chars: {repr(credentials_json[:20])}")
         credentials_info = json.loads(credentials_json)
         credentials = service_account.Credentials.from_service_account_info(credentials_info)
 

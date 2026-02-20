@@ -31,7 +31,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 - Maintains poll lifecycle state in Redis `pulsefm:playback:current` via `poll.status` (`OPEN`/`CLOSED`).
 - Publishes vote OPEN/CLOSE events and playback CHANGEOVER.
 - Schedules the next tick based on the current song duration.
-- Schedules a delayed vote-close task 40 seconds before the next tick (or immediately for songs shorter than 40 seconds).
+- Schedules a delayed vote-close task 60 seconds before the next tick (or immediately for songs shorter than 60 seconds).
 - Sets vote `endAt` to the close-task trigger time (separate from song `endAt`).
 
 ## Run locally
