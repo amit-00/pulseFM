@@ -30,12 +30,6 @@ resource "google_project_iam_member" "heartbeat_ingress_pubsub" {
   member  = "serviceAccount:${google_service_account.heartbeat_ingress.email}"
 }
 
-resource "google_project_iam_member" "next_song_updater_firestore" {
-  project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
-}
-
 resource "google_project_iam_member" "next_song_updater_tasks" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"

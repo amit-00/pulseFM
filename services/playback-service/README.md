@@ -5,7 +5,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 ## Endpoint
 - `POST /tick` (payload requires `version`)
 - `POST /vote/close`
-- `POST /next/replace-if-stubbed`
+- `POST /next/refresh`
 - `GET /health`
 
 ## Required env vars
@@ -27,8 +27,8 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 
 ## Behavior
 - Updates station playback and marks songs played.
-- `POST /next/replace-if-stubbed` replaces `stations/main.next` only when next is `stubbed`, marks the selected song `queued`, and reconciles redis snapshot `nextSong` for both `updated` and `already_set` responses.
-- `POST /next/replace-if-stubbed` emits `NEXT-SONG-CHANGED` only when reconciliation detects redis `nextSong` was out of sync.
+- `POST /next/refresh` replaces `stations/main.next` only when next is `stubbed`, selecting the most recent `songs` document with `status == "ready"` (`createdAt DESC`), then marking it `queued`.
+- `POST /next/refresh` reconciles redis snapshot `nextSong` and emits `NEXT-SONG-CHANGED` only when redis state changed.
 - `POST /vote/close` only closes the current vote when both `voteId` and `version` match `voteState/current`.
 - `POST /tick` closes current vote only when it is open, then opens a new vote. It promotes `stations/main.next` to current playback, marks the promoted song `played` (non-stubbed), and chooses the most recently `ready` song as the next candidate (fallback `stubbed`).
 - `POST /tick` is version-gated for idempotency: if payload `version` is less than or equal to `stations/main.version`, it returns a noop response (`status: "noop"`) and performs no mutations.

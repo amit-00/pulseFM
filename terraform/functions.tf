@@ -251,7 +251,6 @@ resource "google_cloudfunctions2_function" "next_song_updater" {
     environment_variables = {
       TARGET_BUCKET              = google_storage_bucket.generated_songs.name
       ENCODED_PREFIX             = "encoded/"
-      SONGS_COLLECTION           = "songs"
       PROJECT_ID                 = var.project_id
       LOCATION                   = var.region
       PLAYBACK_QUEUE_NAME        = google_cloud_tasks_queue.playback_queue.name

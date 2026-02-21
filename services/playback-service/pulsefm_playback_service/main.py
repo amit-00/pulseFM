@@ -293,6 +293,16 @@ async def _update_playback_next_song_snapshot(vote_id: str, duration_ms: int) ->
     return True
 
 
+async def _reconcile_next_song_snapshot(result: Dict[str, Any]) -> bool:
+    vote_id = result.get("voteId")
+    duration_ms = result.get("durationMs")
+    if not isinstance(vote_id, str) or not vote_id:
+        return False
+    if not isinstance(duration_ms, int) or duration_ms <= 0:
+        return False
+    return await _update_playback_next_song_snapshot(vote_id, duration_ms)
+
+
 async def _update_redis_on_open(
     vote_id: str,
     start_at: datetime,
@@ -421,20 +431,11 @@ async def _rotate_song(db: AsyncClient, request_version: int) -> SongRotationRes
         duration_ms = int(current_duration)
         ends_at = now + timedelta(milliseconds=duration_ms)
 
-        candidate_song: dict | None = None
-        query = (
-            songs_ref
-            .where("status", "==", "ready")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(5)
+        candidate_song = await _select_ready_song_candidate(
+            transaction,
+            songs_ref,
+            current_vote_id=str(current_vote_id) if current_vote_id is not None else None,
         )
-        ready_docs = await query.get(transaction=transaction)
-        for doc in ready_docs:
-            if doc.id == current_vote_id:
-                continue
-            data = doc.to_dict() or {}
-            candidate_song = {"id": doc.id, "duration": data.get("durationMs"), "stubbed": False}
-            break
 
         if candidate_song is None:
             stubbed_snap = await songs_ref.document("stubbed").get(transaction=transaction)
@@ -490,6 +491,29 @@ async def _rotate_song(db: AsyncClient, request_version: int) -> SongRotationRes
     if result is None:
         return None
     return SongRotationResult(**result)
+
+
+async def _select_ready_song_candidate(
+    transaction: AsyncTransaction,
+    songs_ref,
+    current_vote_id: str | None,
+) -> dict | None:
+    query = (
+        songs_ref
+        .where("status", "==", "ready")
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+        .limit(10)
+    )
+    ready_docs = await query.get(transaction=transaction)
+    for doc in ready_docs:
+        if current_vote_id and doc.id == current_vote_id:
+            continue
+        data = doc.to_dict() or {}
+        duration_ms = data.get("durationMs")
+        if duration_ms is None:
+            continue
+        return {"id": doc.id, "duration": duration_ms, "stubbed": False}
+    return None
 
 
 async def _rotate_vote(db: AsyncClient, song_duration_ms: int) -> Dict[str, Any]:
@@ -573,6 +597,76 @@ def _schedule_next_tasks(rotation: SongRotationResult, window: Dict[str, Any], r
 
 
 # ---------------------------------------------------------------------------
+# Refresh next song helpers
+# ---------------------------------------------------------------------------
+
+
+async def _refresh_next_song(db: AsyncClient, vote_id: str) -> Dict[str, Any]:
+    station_ref = db.collection(settings.stations_collection).document("main")
+    songs_ref = db.collection(settings.songs_collection)
+
+    @async_transactional
+    async def _transaction_fn(transaction: AsyncTransaction) -> Dict[str, Any]:
+        station_snap = await station_ref.get(transaction=transaction)
+        if not station_snap.exists:
+            raise ValueError("stations/main not found")
+        station = station_snap.to_dict() or {}
+        current_vote_id = station.get("voteId")
+        next_data = station.get("next") or {}
+        next_vote_id = next_data.get("voteId")
+        station_version = int(station.get("version") or 0)
+
+        if next_vote_id != "stubbed":
+            existing_duration = next_data.get("durationMs") or next_data.get("duration")
+            if existing_duration is None:
+                raise ValueError("stations/main.next missing duration")
+            return {
+                "action": "noop",
+                "reason": "next_not_stubbed",
+                "voteId": next_vote_id,
+                "durationMs": int(existing_duration),
+                "version": station_version,
+            }
+
+        candidate_song = await _select_ready_song_candidate(
+            transaction,
+            songs_ref,
+            current_vote_id=str(current_vote_id) if current_vote_id is not None else None,
+        )
+        if candidate_song is None:
+            return {
+                "action": "noop",
+                "reason": "no_ready_song",
+                "voteId": next_vote_id,
+                "version": station_version,
+            }
+
+        duration_ms = int(candidate_song["duration"])
+        vote_id = str(candidate_song["id"])
+        transaction.update(station_ref, {
+            "next": {
+                "voteId": vote_id,
+                "duration": duration_ms,
+                "durationMs": duration_ms,
+            },
+        })
+        transaction.update(songs_ref.document(vote_id), {"status": "queued"})
+        return {"action": "updated", "voteId": vote_id, "durationMs": duration_ms, "version": station_version}
+
+    transaction = db.transaction()
+    try:
+        result = await _transaction_fn(transaction)
+    except ValueError as exc:
+        logger.exception("Failed to refresh next song")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+    except Exception:
+        logger.exception("Failed to refresh next song", extra={"voteId": vote_id})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to refresh next song")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
 
@@ -601,89 +695,39 @@ async def close_vote(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "ok", **result}
 
 
-@app.post("/next/replace-if-stubbed")
-async def replace_next_if_stubbed(payload: Dict[str, Any]) -> Dict[str, Any]:
-    vote_id_raw = payload.get("voteId")
-    duration_raw = payload.get("durationMs")
-    if not isinstance(vote_id_raw, str) or not vote_id_raw.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
-    if not isinstance(duration_raw, int) or duration_raw <= 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="durationMs must be a positive integer")
-    duration_ms = duration_raw
-
-    vote_id = vote_id_raw.strip()
+@app.post("/next/refresh")
+async def refresh_next_song(payload: Dict[str, Any]) -> Dict[str, Any]:
+    trigger_vote_id = payload.get("voteId")
     db = get_firestore_client()
-    station_ref = db.collection(settings.stations_collection).document("main")
-    songs_ref = db.collection(settings.songs_collection)
+    result = await _refresh_next_song(db, str(trigger_vote_id))
 
-    @async_transactional
-    async def _transaction_fn(transaction: AsyncTransaction) -> Dict[str, Any]:
-        station_snap = await station_ref.get(transaction=transaction)
-        if not station_snap.exists:
-            raise ValueError("stations/main not found")
-        station = station_snap.to_dict() or {}
-        next_data = station.get("next") or {}
-        next_vote_id = next_data.get("voteId")
-        station_version = int(station.get("version") or 0)
+    if result is None:
+        return {"status": "noop", "reason": "stale_version", "voteId": trigger_vote_id}
 
-        if next_vote_id == vote_id:
-            existing_duration = next_data.get("durationMs") or next_data.get("duration")
-            if existing_duration is None:
-                raise ValueError("stations/main.next missing duration for already_set")
-            return {
-                "action": "already_set",
-                "voteId": vote_id,
-                "durationMs": int(existing_duration),
-                "version": station_version,
-            }
-        if next_vote_id != "stubbed":
-            return {
-                "action": "noop",
-                "reason": "next_not_stubbed",
-                "voteId": next_vote_id,
-                "version": station_version,
-            }
-
-        transaction.update(station_ref, {
-            "next": {
-                "voteId": vote_id,
-                "duration": duration_ms,
-                "durationMs": duration_ms,
-            },
-        })
-        if vote_id != "stubbed":
-            transaction.update(songs_ref.document(vote_id), {"status": "queued"})
-        return {"action": "updated", "voteId": vote_id, "durationMs": duration_ms, "version": station_version}
-
-    transaction = db.transaction()
-    try:
-        result = await _transaction_fn(transaction)
-    except ValueError as exc:
-        logger.exception("Failed to replace next song")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
-    except Exception:
-        logger.exception("Failed to replace next song", extra={"voteId": vote_id})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to replace next song")
+    logger.info(
+        "Refreshed next song", 
+        extra={"voteId": result.get("voteId"), "version": result.get("version")}
+    )
 
     redis_changed: bool | None = None
-    if result.get("action") in {"updated", "already_set"}:
+    if result.get("action") in {"updated", "noop"}:
         try:
-            canonical_vote_id = str(result["voteId"])
-            canonical_duration_ms = int(result["durationMs"])
             canonical_version = int(result.get("version") or 0)
-            redis_changed = await _update_playback_next_song_snapshot(canonical_vote_id, canonical_duration_ms)
+            redis_changed = await _reconcile_next_song_snapshot(result)
             if redis_changed:
+                canonical_vote_id = str(result["voteId"])
+                canonical_duration_ms = int(result["durationMs"])
                 _publish_playback_event(
                     "NEXT-SONG-CHANGED",
                     {"voteId": canonical_vote_id, "durationMs": canonical_duration_ms, "version": canonical_version},
                 )
         except Exception:
-            logger.exception("Failed to publish next-song change", extra={"voteId": vote_id})
+            logger.exception("Failed to publish next-song change", extra={"voteId": result.get("voteId")})
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish next-song change")
 
     logger.info(
-        "Replace next request handled",
-        extra={"result": result, "redisChanged": redis_changed},
+        "Refresh next request handled",
+        extra={"result": result, "redisChanged": redis_changed, "triggerVoteId": trigger_vote_id},
     )
     return {"status": "ok", **result}
 

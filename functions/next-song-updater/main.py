@@ -7,7 +7,6 @@ from functools import lru_cache
 
 import functions_framework
 from google.api_core import exceptions as gax_exceptions
-from google.cloud import firestore
 from google.cloud import tasks_v2
 
 logging.basicConfig(
@@ -18,23 +17,12 @@ logger = logging.getLogger(__name__)
 
 TARGET_BUCKET = os.getenv("TARGET_BUCKET", "pulsefm-generated-songs")
 ENCODED_PREFIX = os.getenv("ENCODED_PREFIX", "encoded/")
-SONGS_COLLECTION = os.getenv("SONGS_COLLECTION", "songs")
 PROJECT_ID = os.getenv("PROJECT_ID", "")
 LOCATION = os.getenv("LOCATION", "")
 PLAYBACK_QUEUE_NAME = os.getenv("PLAYBACK_QUEUE_NAME", "playback-queue")
 PLAYBACK_SERVICE_URL = os.getenv("PLAYBACK_SERVICE_URL", "")
 TASKS_OIDC_SERVICE_ACCOUNT = os.getenv("TASKS_OIDC_SERVICE_ACCOUNT", "")
 STUBBED_VOTE_ID = "stubbed"
-
-
-class RetryableError(RuntimeError):
-    pass
-
-
-@lru_cache(maxsize=1)
-def _get_firestore_client() -> firestore.Client:
-    return firestore.Client()
-
 
 @lru_cache(maxsize=1)
 def _get_tasks_client() -> tasks_v2.CloudTasksClient:
@@ -60,22 +48,11 @@ def _extract_vote_id(object_name: str) -> str | None:
     return vote_id
 
 
-def _load_duration_ms(vote_id: str) -> int:
-    doc = _get_firestore_client().collection(SONGS_COLLECTION).document(vote_id).get()
-    if not doc.exists: # type: ignore[union-attr]
-        raise RetryableError(f"songs/{vote_id} does not exist yet")
-    data = doc.to_dict() or {} # type: ignore[attr-defined]
-    duration_ms = data.get("durationMs")
-    if not isinstance(duration_ms, int) or duration_ms <= 0:
-        raise RetryableError(f"songs/{vote_id}.durationMs is missing or invalid")
-    return duration_ms
+def _build_task_id(vote_id: str) -> str:
+    return f"next-song-refresh-{vote_id}"
 
 
-def _build_task_id(vote_id: str, duration_ms: int) -> str:
-    return f"next-song-replace-{vote_id}-{duration_ms}"
-
-
-def _enqueue_replace_next_task(vote_id: str, duration_ms: int) -> None:
+def _enqueue_refresh_next_task(vote_id: str) -> None:
     if not PROJECT_ID or not LOCATION:
         raise ValueError("PROJECT_ID and LOCATION are required")
     if not PLAYBACK_SERVICE_URL:
@@ -84,12 +61,12 @@ def _enqueue_replace_next_task(vote_id: str, duration_ms: int) -> None:
     client = _get_tasks_client()
     parent = client.queue_path(PROJECT_ID, LOCATION, PLAYBACK_QUEUE_NAME)
     task = {
-        "name": client.task_path(PROJECT_ID, LOCATION, PLAYBACK_QUEUE_NAME, _build_task_id(vote_id, duration_ms)),
+        "name": client.task_path(PROJECT_ID, LOCATION, PLAYBACK_QUEUE_NAME, _build_task_id(vote_id)),
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
-            "url": PLAYBACK_SERVICE_URL.rstrip("/") + "/next/replace-if-stubbed",
+            "url": PLAYBACK_SERVICE_URL.rstrip("/") + "/next/refresh",
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"voteId": vote_id, "durationMs": duration_ms}).encode("utf-8"),
+            "body": json.dumps({"voteId": vote_id}).encode("utf-8"),
         },
     }
     if TASKS_OIDC_SERVICE_ACCOUNT:
@@ -100,7 +77,7 @@ def _enqueue_replace_next_task(vote_id: str, duration_ms: int) -> None:
     try:
         client.create_task(request={"parent": parent, "task": task})
     except gax_exceptions.AlreadyExists:
-        logger.info("Replace-next task already exists", extra={"voteId": vote_id, "durationMs": duration_ms})
+        logger.info("Refresh-next task already exists", extra={"voteId": vote_id})
 
 
 @functions_framework.cloud_event
@@ -123,13 +100,9 @@ def next_song_updater(event):
         return
 
     try:
-        duration_ms = _load_duration_ms(vote_id)
-        _enqueue_replace_next_task(vote_id, duration_ms)
-    except RetryableError:
-        logger.exception("Retryable next-song enqueue failure", extra={"voteId": vote_id})
-        raise
+        _enqueue_refresh_next_task(vote_id)
     except Exception:
-        logger.exception("Failed to enqueue replace-next task", extra={"voteId": vote_id})
+        logger.exception("Failed to enqueue refresh-next task", extra={"voteId": vote_id})
         raise
 
-    logger.info("Enqueued replace-next task", extra={"voteId": vote_id, "durationMs": duration_ms})
+    logger.info("Enqueued refresh-next task", extra={"voteId": vote_id})
