@@ -218,6 +218,91 @@ resource "google_cloud_run_v2_service" "playback_stream" {
   }
 }
 
+resource "google_cloud_run_v2_service" "modal_dispatch_service" {
+  name     = "modal-dispatch-service"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+
+  template {
+    service_account = google_service_account.modal_dispatch_service.email
+    vpc_access {
+      connector = google_vpc_access_connector.memorystore.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
+    containers {
+      image = var.modal_dispatch_service_image
+      env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "MODAL_QUEUE_NAME"
+        value = google_cloud_tasks_queue.playback_queue.name
+      }
+      env {
+        name  = "MODAL_DISPATCH_SERVICE_URL"
+        value = "https://modal-dispatch-service${local.cloud_run_url_suffix}"
+      }
+      env {
+        name  = "TASKS_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.modal_dispatch_service.email
+      }
+      env {
+        name  = "REDIS_HOST"
+        value = google_redis_instance.memorystore.host
+      }
+      env {
+        name  = "REDIS_PORT"
+        value = tostring(google_redis_instance.memorystore.port)
+      }
+      env {
+        name  = "MODAL_TOKEN_ID"
+        value = var.modal_token_id
+      }
+      env {
+        name  = "MODAL_TOKEN_SECRET"
+        value = var.modal_token_secret
+      }
+      env {
+        name  = "MODAL_APP_NAME"
+        value = "pulsefm-worker"
+      }
+      env {
+        name  = "MODAL_CLASS_NAME"
+        value = "MusicGenerator"
+      }
+      env {
+        name  = "MODAL_METHOD_NAME"
+        value = "generate"
+      }
+      env {
+        name  = "MODAL_FUNCTION_NAME"
+        value = "MusicGenerator.generate"
+      }
+      env {
+        name  = "WARMUP_LEAD_SECONDS"
+        value = "30"
+      }
+      env {
+        name  = "SCALE_DOWN_RETRY_HORIZON_SECONDS"
+        value = "300"
+      }
+      env {
+        name  = "SCALE_DOWN_RETRY_DELAY_SECONDS"
+        value = "5"
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
+}
+
 resource "google_cloud_run_v2_service_iam_member" "vote_api_nextjs_invoker" {
   name     = google_cloud_run_v2_service.vote_api.name
   location = var.region
@@ -244,4 +329,18 @@ resource "google_cloud_run_v2_service_iam_member" "playback_service_invoker" {
   location = var.region
   role     = "roles/run.invoker"
   member   = "serviceAccount:${google_service_account.playback_service.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "modal_dispatch_service_invoker" {
+  name     = google_cloud_run_v2_service.modal_dispatch_service.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "eventarc_modal_dispatch_invoker" {
+  name     = google_cloud_run_v2_service.modal_dispatch_service.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.eventarc.email}"
 }

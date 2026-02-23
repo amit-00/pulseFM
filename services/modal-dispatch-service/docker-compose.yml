@@ -1,0 +1,21 @@
+services:
+  modal-dispatch-service:
+    build:
+      context: ../..
+      dockerfile: services/modal-dispatch-service/Dockerfile
+    environment:
+      - PROJECT_ID=pulsefm-484500
+      - LOCATION=northamerica-northeast1
+      - MODAL_QUEUE_NAME=playback-queue
+      - MODAL_DISPATCH_SERVICE_URL=http://modal-dispatch-service:8080
+      - TASKS_OIDC_SERVICE_ACCOUNT=
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MODAL_APP_NAME=pulsefm-worker
+      - MODAL_CLASS_NAME=MusicGenerator
+      - MODAL_METHOD_NAME=generate
+      - MODAL_FUNCTION_NAME=MusicGenerator.generate
+      - MODAL_TOKEN_ID=
+      - MODAL_TOKEN_SECRET=
+    ports:
+      - "8084:8080"

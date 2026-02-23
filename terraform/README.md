@@ -1,13 +1,13 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream), Cloud Functions (tally-function, modal-dispatcher, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, Memorystore (Redis), and an external HTTPS load balancer + Cloud CDN for audio delivery.
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, Memorystore (Redis), and an external HTTPS load balancer + Cloud CDN for audio delivery.
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`
 - GitHub repository connected to Cloud Build (for the trigger)
 
 ## Inputs (required)
-- `vote_api_image`, `playback_service_image`, `playback_stream_image`, `encoder_image`
+- `vote_api_image`, `playback_service_image`, `playback_stream_image`, `modal_dispatch_service_image`, `encoder_image`
 - `github_owner`, `github_repo`
 - `cdn_signed_cookie_key_value`
 - `nextjs_session_signing_key`
@@ -21,6 +21,7 @@ terraform apply \
   -var="encoder_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/encoder:placeholder" \
   -var="playback_service_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-service:placeholder" \
   -var="playback_stream_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/playback-stream:placeholder" \
+  -var="modal_dispatch_service_image=northamerica-northeast1-docker.pkg.dev/pulsefm-484500/pulsefm/modal-dispatch-service:placeholder" \
   -var="github_owner=<owner>" \
   -var="github_repo=<repo>"
 ```

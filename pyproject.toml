@@ -13,3 +13,4 @@ pulsefm-descriptors = { workspace = true }
 pulsefm-tasks = { workspace = true }
 pulsefm-playback-service = { workspace = true }
 pulsefm-playback-stream = { workspace = true }
+pulsefm-modal-dispatch-service = { workspace = true }

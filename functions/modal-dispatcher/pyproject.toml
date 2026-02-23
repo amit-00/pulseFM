@@ -1,9 +1,0 @@
-[build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "pulsefm-modal-dispatcher"
-version = "0.1.0"
-description = "PulseFM modal dispatcher Cloud Function."
-requires-python = ">=3.11"

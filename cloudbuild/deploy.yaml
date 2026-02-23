@@ -29,6 +29,7 @@ steps:
           -var="encoder_image=${_ENCODER_IMAGE}" \
           -var="playback_service_image=${_PLAYBACK_SERVICE_IMAGE}" \
           -var="playback_stream_image=${_PLAYBACK_STREAM_IMAGE}" \
+          -var="modal_dispatch_service_image=${_MODAL_DISPATCH_SERVICE_IMAGE}" \
           -var="window_seconds=${_WINDOW_SECONDS}" \
           -var="options_per_window=${_OPTIONS_PER_WINDOW}" \
           -var="github_owner=${_GITHUB_OWNER}" \
@@ -108,6 +109,24 @@ steps:
         "push",
         "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA}",
       ]
+  - name: gcr.io/cloud-builders/docker
+    id: build-modal-dispatch-service
+    args:
+      [
+        "build",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/modal-dispatch-service:${SHORT_SHA}",
+        "-f",
+        "services/modal-dispatch-service/Dockerfile",
+        ".",
+      ]
+  - name: gcr.io/cloud-builders/docker
+    id: push-modal-dispatch-service
+    args:
+      [
+        "push",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/modal-dispatch-service:${SHORT_SHA}",
+      ]
   - name: gcr.io/cloud-builders/gcloud
     id: deploy-services
     entrypoint: /bin/sh
@@ -119,6 +138,7 @@ steps:
         gcloud run deploy encoder --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:${SHORT_SHA} --service-account encoder@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
         gcloud run deploy playback-service --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:${SHORT_SHA} --service-account playback-service@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
         gcloud run deploy playback-stream --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:${SHORT_SHA} --service-account playback-stream@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
+        gcloud run deploy modal-dispatch-service --region ${_REGION} --image ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/modal-dispatch-service:${SHORT_SHA} --service-account modal-dispatch-service@${PROJECT_ID}.iam.gserviceaccount.com --impersonate-service-account ${_TERRAFORM_SA}
 substitutions:
   _REGION: northamerica-northeast1
   _ARTIFACT_REPO: pulsefm
@@ -132,6 +152,7 @@ substitutions:
   _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
   _PLAYBACK_SERVICE_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-service:placeholder"
   _PLAYBACK_STREAM_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/playback-stream:placeholder"
+  _MODAL_DISPATCH_SERVICE_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/modal-dispatch-service:placeholder"
   _WINDOW_SECONDS: "300"
   _OPTIONS_PER_WINDOW: "4"
   _GITHUB_OWNER: ""

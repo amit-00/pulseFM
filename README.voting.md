@@ -1,12 +1,12 @@
 # Voting System (Vote API + Tally Worker + Playback Service)
 
-This repo includes four FastAPI services and one Cloud Function that implement an anonymous voting system on Cloud Run:
+This repo includes five FastAPI services and three Cloud Functions that implement an anonymous voting system on Cloud Run:
 
 - **vote-api**: accepts votes, pre-checks dedupe, enqueues Cloud Tasks
 - **tally-function**: receives Cloud Tasks, updates Redis tallies idempotently
 - **playback-service**: advances station playback, closes/open votes, and publishes vote events
 - **playback-stream**: streams system state and tally updates over SSE
-- **modal-dispatcher** (Cloud Function): dispatches the Modal worker on vote close when listeners are active
+- **modal-dispatch-service**: handles Modal warmup and generation on vote events
 
 ## Firestore schema
 
@@ -89,8 +89,10 @@ Queues:
 - `GET /state` returns the current state snapshot
 - `GET /stream` streams SSE events (HELLO, TALLY_SNAPSHOT, TALLY_DELTA, SONG_CHANGED, VOTE_CLOSED, HEARTBEAT)
 
-### modal-dispatcher
-- Pub/Sub triggered (CLOSE events) to dispatch the Modal worker when listeners are active
+### modal-dispatch-service
+- Handles vote events via Eventarc HTTP endpoint
+- On `OPEN`, schedules `/warmup` for `endAt - 30s` when listeners are active
+- On `CLOSE`, scales Modal up, awaits generation, and scales back down
 
 ## Pub/Sub
 
@@ -100,7 +102,7 @@ Topics:
 - `tally` (published by tally-function)
 
 Consumers:
-- `modal-dispatcher` (CLOSE events from `vote-events`)
+- `modal-dispatch-service` (OPEN/CLOSE events from `vote-events`)
 - `playback-stream` (tally, playback, and vote-events)
 
 Message payload:
@@ -108,6 +110,7 @@ Message payload:
 {
   "event": "OPEN | CLOSE",
   "voteId": "string",
+  "endAt": "number (OPEN only, epoch ms)",
   "winnerOption": "string (CLOSE only)"
 }
 ```

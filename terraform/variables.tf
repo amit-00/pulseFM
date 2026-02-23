@@ -33,6 +33,11 @@ variable "playback_stream_image" {
   description = "Container image for playback-stream (tag or digest)"
 }
 
+variable "modal_dispatch_service_image" {
+  type        = string
+  description = "Container image for modal-dispatch-service (tag or digest)"
+}
+
 variable "window_seconds" {
   type    = number
   default = 300

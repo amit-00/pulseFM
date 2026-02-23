@@ -18,16 +18,16 @@ resource "google_project_iam_member" "tally_function_pubsub" {
   member  = "serviceAccount:${google_service_account.tally_function.email}"
 }
 
-resource "google_project_iam_member" "modal_dispatcher_firestore" {
-  project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
-}
-
 resource "google_project_iam_member" "heartbeat_ingress_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.heartbeat_ingress.email}"
+}
+
+resource "google_project_iam_member" "modal_dispatch_service_tasks" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
 }
 
 resource "google_project_iam_member" "next_song_updater_tasks" {
@@ -96,10 +96,10 @@ resource "google_project_iam_member" "encoder_vpc_access" {
   member  = "serviceAccount:${google_service_account.encoder.email}"
 }
 
-resource "google_project_iam_member" "modal_dispatcher_vpc_access" {
+resource "google_project_iam_member" "modal_dispatch_service_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.modal_dispatcher.email}"
+  member  = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
 }
 
 resource "google_project_iam_member" "tally_function_vpc_access" {
@@ -186,8 +186,8 @@ resource "google_service_account_iam_member" "terraform_act_as_tally_function" {
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_service_account_iam_member" "terraform_act_as_modal_dispatcher" {
-  service_account_id = google_service_account.modal_dispatcher.name
+resource "google_service_account_iam_member" "terraform_act_as_modal_dispatch_service" {
+  service_account_id = google_service_account.modal_dispatch_service.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
@@ -306,4 +306,10 @@ resource "google_service_account_iam_member" "next_song_updater_act_as_playback_
   service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.next_song_updater.email}"
+}
+
+resource "google_service_account_iam_member" "modal_dispatch_service_act_as_self" {
+  service_account_id = google_service_account.modal_dispatch_service.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
 }

@@ -26,6 +26,10 @@ output "playback_stream_url" {
   value = google_cloud_run_v2_service.playback_stream.uri
 }
 
+output "modal_dispatch_service_url" {
+  value = google_cloud_run_v2_service.modal_dispatch_service.uri
+}
+
 output "tally_queue" {
   value = google_cloud_tasks_queue.tally_queue.name
 }

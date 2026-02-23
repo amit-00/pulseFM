@@ -21,5 +21,6 @@ build_and_push vote-api services/vote-api/Dockerfile
 build_and_push encoder services/encoder/Dockerfile
 build_and_push playback-service services/playback-service/Dockerfile
 build_and_push playback-stream services/playback-stream/Dockerfile
+build_and_push modal-dispatch-service services/modal-dispatch-service/Dockerfile
 
 echo "Done. Images pushed to ${registry} with tag ${TAG}."

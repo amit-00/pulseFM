@@ -12,7 +12,7 @@ members = [
     "pulsefm-auth",
     "pulsefm-descriptors",
     "pulsefm-encoder",
-    "pulsefm-modal-dispatcher",
+    "pulsefm-modal-dispatch-service",
     "pulsefm-models",
     "pulsefm-playback-service",
     "pulsefm-pubsub",
@@ -1313,9 +1313,29 @@ requires-dist = [
 ]
 
 [[package]]
-name = "pulsefm-modal-dispatcher"
+name = "pulsefm-modal-dispatch-service"
 version = "0.1.0"
-source = { editable = "functions/modal-dispatcher" }
+source = { editable = "services/modal-dispatch-service" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "modal" },
+    { name = "pulsefm-descriptors" },
+    { name = "pulsefm-pubsub" },
+    { name = "pulsefm-redis" },
+    { name = "pulsefm-tasks" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = "==0.104.1" },
+    { name = "modal" },
+    { name = "pulsefm-descriptors", editable = "packages/pulsefm-descriptors" },
+    { name = "pulsefm-pubsub", editable = "packages/pulsefm-pubsub" },
+    { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
+    { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
+]
 
 [[package]]
 name = "pulsefm-models"

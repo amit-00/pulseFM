@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-modal-dispatch-service"
+version = "0.1.0"
+description = "PulseFM modal dispatch service."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.104.1",
+  "uvicorn[standard]==0.24.0",
+  "modal",
+  "pulsefm-descriptors",
+  "pulsefm-pubsub",
+  "pulsefm-redis",
+  "pulsefm-tasks",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pulsefm_modal_dispatch_service*"]
