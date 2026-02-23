@@ -34,6 +34,7 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 - `POST /tick` is version-gated for idempotency: if payload `version` is less than or equal to `stations/main.version`, it returns a noop response (`status: "noop"`) and performs no mutations.
 - Maintains poll lifecycle state in Redis `pulsefm:playback:current` via `poll.status` (`OPEN`/`CLOSED`).
 - Publishes vote OPEN/CLOSE events and playback `CHANGEOVER` plus `NEXT-SONG-CHANGED`.
+- Vote OPEN events include `endAt` (epoch ms) for scheduled close timing; CLOSE events remain unchanged.
 - Schedules the next tick based on the current song duration.
 - Schedules a delayed vote-close task 60 seconds before the next tick (or immediately for songs shorter than 60 seconds).
 - Sets vote `endAt` to the close-task trigger time (separate from song `endAt`).

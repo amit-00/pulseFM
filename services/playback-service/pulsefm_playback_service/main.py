@@ -252,10 +252,17 @@ def _pick_winner(tallies: Dict[str, Any]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def _publish_vote_event(event: str, vote_id: str, winner_option: str | None = None) -> None:
+def _publish_vote_event(
+    event: str,
+    vote_id: str,
+    winner_option: str | None = None,
+    end_at_ms: int | None = None,
+) -> None:
     payload: Dict[str, Any] = {"event": event, "voteId": vote_id}
     if winner_option is not None:
         payload["winnerOption"] = winner_option
+    if end_at_ms is not None:
+        payload["endAt"] = end_at_ms
     publish_json(settings.project_id or None, settings.vote_events_topic, payload)
 
 
@@ -396,7 +403,7 @@ async def _open_next_vote(db: AsyncClient, version: int, duration_ms: int) -> Di
 
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
     logger.info("Opened vote", extra={"voteId": vote_id, "version": version})
-    _publish_vote_event("OPEN", vote_id)
+    _publish_vote_event("OPEN", vote_id, end_at_ms=_to_epoch_ms(window_doc.get("endAt")))
 
     return window_doc
 

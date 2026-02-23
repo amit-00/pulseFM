@@ -114,13 +114,12 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
     gpu="L4",
     timeout=600,
     secrets=[gcs_secret],
-    enable_memory_snapshot=True,
-    scaledown_window=120,
+    scaledown_window=2,
 )
 class MusicGenerator:
     """GPU class for music generation with proper container lifecycle management."""
     
-    @modal.enter(snap=True)
+    @modal.enter()
     def load_model(self):
         """Load ACE-Step model once per container lifecycle."""
         from acestep.pipeline_ace_step import ACEStepPipeline
@@ -150,10 +149,9 @@ class MusicGenerator:
         self.gcs_client = storage.Client(credentials=credentials, project=credentials_info["project_id"])
         self.bucket = self.gcs_client.bucket(GCS_BUCKET_NAME)
         logger.info(f"GCS client initialized for bucket: {GCS_BUCKET_NAME}")
-        
     
     @modal.method()
-    def generate(self, genre: str, mood: str, energy: str, vote_id: str | None = None) -> None:
+    def generate(self, genre: str, mood: str, energy: str, vote_id: str) -> None:
         """
         Generate audio and upload to GCS bucket.
         
@@ -182,10 +180,10 @@ class MusicGenerator:
             generation_params = {
                 "audio_duration": GENERATION_DURATION_SEC,
                 "prompt": prompt,
-                "lyrics": "[inst]",  # instrumental marker
+                "lyrics": "[instrumental]",  # instrumental marker
                 "format": "wav",
                 # Inference settings - more steps for better quality
-                "infer_step": 80,
+                "infer_step": 40,
                 # Higher guidance scale for stronger prompt adherence (including BPM in text)
                 "guidance_scale": 18,
                 "scheduler_type": "euler",
