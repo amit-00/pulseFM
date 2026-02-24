@@ -38,6 +38,10 @@ output "playback_queue" {
   value = google_cloud_tasks_queue.playback_queue.name
 }
 
+output "modal_dispatch_queue" {
+  value = google_cloud_tasks_queue.modal_dispatch_queue.name
+}
+
 output "bucket_name" {
   value = google_storage_bucket.generated_songs.name
 }

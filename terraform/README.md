@@ -28,6 +28,11 @@ terraform apply \
 
 After the trigger is created (it is disabled by default), run it manually in Cloud Build. It will apply Terraform, build/push images, and deploy Cloud Run by digest.
 
+## Cloud Tasks queues
+- `tally-queue` for vote-api -> tally-function dispatch.
+- `playback-queue` for playback-service tick/close scheduling.
+- `modal-dispatch-queue` for modal-dispatch-service warmup scheduling.
+
 ## Vercel OIDC (production only)
 - Terraform provisions a Workload Identity Pool + Provider for the Vercel team issuer.
 - Impersonation is restricted to subject: `owner:amit00s-projects:project:pulse-fm:environment:production`.

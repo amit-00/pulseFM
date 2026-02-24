@@ -241,7 +241,7 @@ resource "google_cloud_run_v2_service" "modal_dispatch_service" {
       }
       env {
         name  = "MODAL_QUEUE_NAME"
-        value = google_cloud_tasks_queue.playback_queue.name
+        value = google_cloud_tasks_queue.modal_dispatch_queue.name
       }
       env {
         name  = "MODAL_DISPATCH_SERVICE_URL"

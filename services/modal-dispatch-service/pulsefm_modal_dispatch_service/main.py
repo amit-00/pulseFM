@@ -66,8 +66,8 @@ def _get_descriptor(winner_option: str) -> Dict[str, str]:
 
 
 def _set_modal_min_instances(min_instances: int) -> None:
-    function = modal.Function.from_name(settings.modal_app_name, settings.modal_function_name)
-    function.update_autoscaler(min_containers=min_instances)
+    cls = modal.Cls.from_name(settings.modal_app_name, settings.modal_class_name)
+    cls().update_autoscaler(min_containers=min_instances)
 
 
 def _dispatch_modal_generation(vote_id: str, winner_option: str) -> None:
