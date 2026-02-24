@@ -5,6 +5,9 @@ resource "google_cloud_run_v2_service" "vote_api" {
 
   template {
     service_account = google_service_account.vote_api.email
+    scaling {
+      min_instance_count = 1
+    }
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
