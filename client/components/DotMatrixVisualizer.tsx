@@ -119,8 +119,11 @@ export function DotMatrixVisualizer({
     const active = isActiveRef.current;
 
     // Draw dots
+    const colToFrequencyDenominator = Math.max(1, cols - 1);
+    const maxFrequencyIndex = Math.max(0, data.length - 1);
+
     for (let col = 0; col < cols; col++) {
-      const frequencyIndex = Math.floor((col / cols) * data.length);
+      const frequencyIndex = Math.floor((col / colToFrequencyDenominator) * maxFrequencyIndex);
       const frequencyValue = data[frequencyIndex] || 0;
       const normalizedFrequency = frequencyValue / 255;
       const litRows = active ? Math.ceil(normalizedFrequency * rows) : 0;

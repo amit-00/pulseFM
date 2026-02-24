@@ -86,22 +86,17 @@ export function WaveformVisualizer({
     []
   );
 
-  // Calculate average frequency value from bottom 75% of frequencies
+  // Calculate average frequency value from the full analyser range
   const getAverageFrequency = useCallback((data: Uint8Array): number => {
     if (data.length === 0) return 0;
 
-    // Use only the bottom 75% of frequency bins (lowest frequencies)
-    const endIndex = Math.floor(data.length * 0.75);
     let sum = 0;
-    let count = 0;
 
-    for (let i = 0; i < endIndex; i++) {
+    for (let i = 0; i < data.length; i++) {
       sum += data[i];
-      count++;
     }
 
-    if (count === 0) return 0;
-    return sum / count / 255; // Normalized 0-1
+    return sum / data.length / 255; // Normalized 0-1
   }, []);
 
   // Main render function

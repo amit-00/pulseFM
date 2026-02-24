@@ -162,7 +162,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
               <PlayerControls
                 isPlaying={isPlaying}
                 onPlayPause={handlePlayPause}
-                label="pulseFM Radio"
+                label="PulseFM Radio"
                 songTimeRemaining={formattedSongTime}
                 activeListeners={activeListeners}
                 volume={volume}
