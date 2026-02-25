@@ -1,6 +1,6 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, Memorystore (Redis), and an external HTTPS load balancer + Cloud CDN for audio delivery.
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`
@@ -9,7 +9,6 @@ This directory provisions Cloud Run services (vote-api, playback-service, encode
 ## Inputs (required)
 - `vote_api_image`, `playback_service_image`, `playback_stream_image`, `modal_dispatch_service_image`, `encoder_image`
 - `github_owner`, `github_repo`
-- `cdn_signed_cookie_key_value`
 - `nextjs_session_signing_key`
 
 ## Usage
@@ -45,7 +44,5 @@ After the trigger is created (it is disabled by default), run it manually in Clo
   - issuer: `https://oidc.vercel.com/amit00s-projects`
   - audience: `https://vercel.com/amit00s-projects`
 
-## CDN notes
-- CDN hostname defaults to `cdn.pulsefm.fm`.
-- Terraform creates a Cloud DNS managed zone for `cdn.pulsefm.fm.` and publishes the A record.
-- If your parent DNS is managed elsewhere, delegate `cdn.pulsefm.fm` to the `cdn_dns_nameservers` output nameservers.
+## Media delivery
+- Audio is currently delivered directly from the public `pulsefm-generated-songs` bucket.

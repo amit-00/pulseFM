@@ -155,7 +155,7 @@ modal-dispatch-service (Cloud Run)
 - **Languages**: TypeScript (client), Python 3.11/3.12 (services/functions/worker), HCL (Terraform).
 - **Frontend**: Next.js 16, React 19, Auth.js, Upstash Redis.
 - **Backend runtime**: FastAPI + Uvicorn (Cloud Run), Functions Framework (Cloud Functions Gen2).
-- **Infra**: Cloud Run, Cloud Functions Gen2, Firestore Native, Pub/Sub, Cloud Tasks, Eventarc, Memorystore Redis, GCS, Artifact Registry, Secret Manager, Cloud CDN + HTTPS LB + Cloud DNS.
+- **Infra**: Cloud Run, Cloud Functions Gen2, Firestore Native, Pub/Sub, Cloud Tasks, Eventarc, Memorystore Redis, GCS, Artifact Registry, Secret Manager.
 - **Packaging**: UV workspace (`pyproject.toml` at repo root).
 - **CI/CD**: Cloud Build pipeline (`cloudbuild/deploy.yaml`) + Terraform apply + image build/push + Cloud Run deploy.
 
@@ -189,6 +189,7 @@ modal-dispatch-service (Cloud Run)
 
 - Playback-stream listener counting scans Redis keys; cost/perf depends on key cardinality.
 - Minimal automated test coverage in current repo.
+- Media is currently served from public GCS object URLs (no CDN edge cache).
 
 ## Getting Started (Local Dev)
 
@@ -331,6 +332,8 @@ terraform apply
 
 Remote state backend is configured to GCS bucket `pulsefm-terraform-state` (`terraform/backend.tf`).
 
+Audio delivery currently uses direct public object URLs from `pulsefm-generated-songs`.
+
 ### Cloud Build pipeline
 
 `cloudbuild/deploy.yaml` performs:
@@ -368,7 +371,7 @@ For first deploy/bootstrap tags:
 
 ## Future Improvements
 
-1. Add integration tests for end-to-end vote -> tally -> stream latency path.
+1. Add Cloud CDN in front of `pulsefm-generated-songs/encoded/*` to reduce global latency, improve cache hit ratios for hot tracks, and offload bucket egress bursts.
 2. Add load tests for SSE fanout and Redis hot-key behavior.
 3. Replace Redis `SCAN`-based listener counting with a cardinality-friendly pattern.
 4. Add DLQ/replay strategy for task/event failures.

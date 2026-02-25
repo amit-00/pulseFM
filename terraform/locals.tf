@@ -16,7 +16,6 @@ locals {
     "vpcaccess.googleapis.com",
     "compute.googleapis.com",
     "pubsub.googleapis.com",
-    "dns.googleapis.com",
     "secretmanager.googleapis.com",
   ]
 
@@ -26,11 +25,5 @@ locals {
     google_cloud_run_v2_service.vote_api.uri,
     "https://vote-api",
     ""
-  )
-
-  cdn_key_value_base64 = replace(
-    replace(var.cdn_signed_cookie_key_value, "+", "-"),
-    "/",
-    "_"
   )
 }

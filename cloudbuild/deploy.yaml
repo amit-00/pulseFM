@@ -19,11 +19,6 @@ steps:
           -var="project_id=${PROJECT_ID}" \
           -var="region=${_REGION}" \
           -var="artifact_repo=${_ARTIFACT_REPO}" \
-          -var="cdn_hostname=${_CDN_HOSTNAME}" \
-          -var="cdn_dns_zone_name=${_CDN_DNS_ZONE_NAME}" \
-          -var="cdn_dns_name=${_CDN_DNS_NAME}" \
-          -var="cdn_signed_cookie_key_name=${_CDN_SIGNING_KEY_NAME}" \
-          -var="cdn_signed_cookie_key_value=${_CDN_SIGNING_KEY_VALUE}" \
           -var="nextjs_session_signing_key=${_NEXTJS_SESSION_SIGNING_KEY}" \
           -var="vote_api_image=${_VOTE_API_IMAGE}" \
           -var="encoder_image=${_ENCODER_IMAGE}" \
@@ -142,11 +137,6 @@ steps:
 substitutions:
   _REGION: northamerica-northeast1
   _ARTIFACT_REPO: pulsefm
-  _CDN_HOSTNAME: "cdn.pulsefm.fm"
-  _CDN_DNS_ZONE_NAME: "cdn-pulsefm-fm"
-  _CDN_DNS_NAME: "cdn.pulsefm.fm."
-  _CDN_SIGNING_KEY_NAME: "pulsefm-cdn-key"
-  _CDN_SIGNING_KEY_VALUE: ""
   _NEXTJS_SESSION_SIGNING_KEY: ""
   _VOTE_API_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/vote-api:placeholder"
   _ENCODER_IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_ARTIFACT_REPO}/encoder:placeholder"
