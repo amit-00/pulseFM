@@ -79,6 +79,7 @@ const HEARTBEAT_INTERVAL_MS = 15000;
 const HEARTBEAT_JITTER_MS = 2000;
 
 export function useStreamPlayer() {
+  const [isInitialStateLoading, setIsInitialStateLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSlot, setActiveSlot] = useState<Slot>("first");
   const [snapshot, setSnapshot] = useState<PlaybackStateSnapshot | null>(null);
@@ -533,10 +534,12 @@ export function useStreamPlayer() {
         setSessionReady(true);
         await refreshState();
         if (cancelled) return;
+        setIsInitialStateLoading(false);
         connectStream();
       } catch {
         if (!cancelled) {
           setStreamError("Failed to initialize playback");
+          setIsInitialStateLoading(false);
         }
       }
     })();
@@ -671,8 +674,17 @@ export function useStreamPlayer() {
   const isExpired = timeRemaining <= 0 || voteData.status === "CLOSED";
   const formattedTime = useMemo(() => formatTime(timeRemaining), [timeRemaining]);
   const formattedSongTime = useMemo(() => formatTime(songTimeRemaining), [songTimeRemaining]);
+  const votePanelTimeLabel = useMemo(
+    () => (isExpired ? "Next vote in" : "Vote ends in"),
+    [isExpired],
+  );
+  const votePanelFormattedTime = useMemo(
+    () => (isExpired ? formattedSongTime : formattedTime),
+    [formattedSongTime, formattedTime, isExpired],
+  );
 
   return {
+    isInitialStateLoading,
     isPlaying,
     handlePlayPause,
     firstSlotAudioRef,
@@ -687,6 +699,8 @@ export function useStreamPlayer() {
     submitVote,
     formattedTime,
     formattedSongTime,
+    votePanelTimeLabel,
+    votePanelFormattedTime,
     activeListeners,
     isExpired,
     streamError,

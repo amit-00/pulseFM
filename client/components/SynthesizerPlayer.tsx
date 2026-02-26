@@ -19,6 +19,7 @@ interface SynthesizerPlayerProps {
 export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
   const [visualizer, setVisualizer] = useState<VisualizerType>("waveform");
   const {
+    isInitialStateLoading,
     isPlaying,
     handlePlayPause,
     firstSlotAudioRef,
@@ -31,14 +32,16 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
     isSubmittingVote,
     voteError,
     submitVote,
-    formattedTime,
     formattedSongTime,
+    votePanelTimeLabel,
+    votePanelFormattedTime,
     activeListeners,
     isExpired,
     streamError,
     volume,
     setVolume,
   } = useStreamPlayer();
+  const isWinnerLoading = isExpired && !voteData.winnerOption;
 
   return (
     <div className={cn("relative h-full w-full", className)}>
@@ -158,33 +161,56 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
       <div className="absolute inset-x-0 bottom-0 px-4 pb-4 sm:px-6 sm:pb-6 md:px-8 md:pb-8 pointer-events-none">
         <div className="w-full p-4 sm:p-5 rounded-2xl bg-stone-950/50 backdrop-blur-sm border border-stone-800/20 pointer-events-auto">
           <div className="flex flex-col md:flex-row gap-4 md:gap-6 md:items-center">
-            <div className="flex-1">
-              <PlayerControls
-                isPlaying={isPlaying}
-                onPlayPause={handlePlayPause}
-                label="PulseFM Radio"
-                songTimeRemaining={formattedSongTime}
-                activeListeners={activeListeners}
-                volume={volume}
-                onVolumeChange={setVolume}
-              />
-            </div>
+            {isInitialStateLoading ? (
+              <>
+                <div className="flex-1 space-y-3">
+                  <div className="h-6 w-28 rounded bg-stone-800/60 animate-pulse" />
+                  <div className="h-11 w-full rounded-lg bg-stone-800/50 animate-pulse" />
+                  <div className="h-3 w-44 rounded bg-stone-800/40 animate-pulse" />
+                </div>
 
-            <div className="hidden md:block w-px h-16 bg-stone-700/30" />
-            <div className="md:hidden h-px w-full bg-stone-700/30" />
+                <div className="hidden md:block w-px h-16 bg-stone-700/30" />
+                <div className="md:hidden h-px w-full bg-stone-700/30" />
 
-            <div className="flex-1 md:max-w-md">
-              <VotePanel
-                voteData={voteData}
-                formattedTime={formattedTime}
-                isExpired={isExpired}
-                hasVoted={hasVoted}
-                selectedOption={selectedOption}
-                isSubmitting={isSubmittingVote}
-                error={voteError || streamError}
-                onSubmitVote={submitVote}
-              />
-            </div>
+                <div className="flex-1 md:max-w-md space-y-3">
+                  <div className="h-4 w-40 rounded bg-stone-800/60 animate-pulse" />
+                  <div className="h-16 w-full rounded-lg bg-stone-800/50 animate-pulse" />
+                  <div className="h-10 w-full rounded-lg bg-stone-800/40 animate-pulse" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex-1">
+                  <PlayerControls
+                    isPlaying={isPlaying}
+                    onPlayPause={handlePlayPause}
+                    label="PulseFM Radio"
+                    songTimeRemaining={formattedSongTime}
+                    activeListeners={activeListeners}
+                    volume={volume}
+                    onVolumeChange={setVolume}
+                  />
+                </div>
+
+                <div className="hidden md:block w-px h-16 bg-stone-700/30" />
+                <div className="md:hidden h-px w-full bg-stone-700/30" />
+
+                <div className="flex-1 md:max-w-md">
+                  <VotePanel
+                    voteData={voteData}
+                    formattedTime={votePanelFormattedTime}
+                    timeLabel={votePanelTimeLabel}
+                    isExpired={isExpired}
+                    hasVoted={hasVoted}
+                    selectedOption={selectedOption}
+                    isSubmitting={isSubmittingVote}
+                    error={voteError || streamError}
+                    onSubmitVote={submitVote}
+                    isWinnerLoading={isWinnerLoading}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
