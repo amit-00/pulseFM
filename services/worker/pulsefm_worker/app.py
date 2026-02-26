@@ -2,6 +2,8 @@
 import json
 import logging
 import modal
+import random
+import secrets
 import tempfile
 import time
 import os
@@ -14,6 +16,7 @@ logger = logging.getLogger(__name__)
 CHECKPOINT_DIR = "/checkpoints/ACE-Step/ACE-Step-v1-3.5B"
 GENERATION_DURATION_SEC = 150
 GCS_BUCKET_NAME = "pulsefm-generated-songs"
+ACE_STEP_MAX_SEED = 2_147_483_647
 
 # Snapshot mode toggle (evaluated at deploy time on the local machine).
 # Set False to fall back to CPU snapshot + GPU load on startup.
@@ -107,6 +110,24 @@ def build_prompt(genre: str, mood: str, energy: str) -> str:
     )
 
     return prompt
+
+
+def _next_seed() -> int:
+    """Generate a bounded random seed compatible with ACE-Step conventions."""
+    return secrets.randbelow(ACE_STEP_MAX_SEED + 1)
+
+
+def _apply_seed(seed: int) -> None:
+    """Apply seed to common RNGs used by inference libraries."""
+    random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except Exception:
+        # Keep generation running even if torch seeding is unavailable.
+        logger.warning("Failed to apply torch seed", extra={"seed": seed})
 
 
 @app.cls(
@@ -233,6 +254,8 @@ class MusicGenerator:
 
         try:
             prompt = build_prompt(genre, mood, energy)
+            seed = _next_seed()
+            logger.info("Using generation seed for vote_id=%s seed=%d", vote_id, seed)
 
             generation_params = {
                 "audio_duration": GENERATION_DURATION_SEC,
@@ -262,6 +285,7 @@ class MusicGenerator:
 
             logger.info("Starting audio generation...")
             t0 = time.monotonic()
+            _apply_seed(seed)
             self.pipeline(**generation_params, save_path=str(generated_path))
             logger.info("Audio generated in %.1fs: %s", time.monotonic() - t0, generated_path)
 
@@ -292,10 +316,13 @@ class MusicGenerator:
         t0 = time.monotonic()
         smoke_path = None
         try:
+            seed = _next_seed()
+            logger.info("Using smoke test seed=%d", seed)
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav", prefix="smoke_")
             smoke_path = Path(temp_file.name)
             temp_file.close()
 
+            _apply_seed(seed)
             self.pipeline(
                 audio_duration=10,
                 prompt="lofi hip hop instrumental, calm, test",
