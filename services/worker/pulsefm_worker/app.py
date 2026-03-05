@@ -135,6 +135,7 @@ def _apply_seed(seed: int) -> None:
     cpu=4,
     memory=16384,
     gpu="L4",
+    min_containers=0,
     timeout=600,
     secrets=[gcs_secret],
     scaledown_window=2,
