@@ -10,3 +10,8 @@ __pycache__/
 node_modules/
 .env
 *.tfvars
+.vercel
+
+# Cloudflare / Wrangler local state
+.wrangler/
+infra/cloudflare/.dev.vars
