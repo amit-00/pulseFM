@@ -344,6 +344,18 @@ Audio delivery currently uses direct public object URLs from `pulsefm-generated-
 
 Cloud Build trigger management is intentionally outside Terraform.
 
+### Cloudflare backend boilerplate (phase 1)
+
+Cloudflare migration scaffolding is now available for backend services under:
+
+- `infra/cloudflare/`
+- `scripts/cloudflare/`
+- `docs/cloudflare/`
+- `.github/workflows/cloudflare-validate.yml`
+- `.github/workflows/cloudflare-deploy.yml`
+
+Phase 1 is intentionally non-deploying and resource-free. It does not create or deploy Workers, Pages, routes, or storage bindings.
+
 ### Bootstrap image script
 
 For first deploy/bootstrap tags:
