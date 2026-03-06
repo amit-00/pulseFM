@@ -1,0 +1,9 @@
+# Cloudflare backend migration boilerplate.
+# Phase 1 intentionally defines only project-level metadata and vars.
+# No Workers entrypoint, Pages project, routes, or bindings are declared yet.
+
+name = "pulsefm-backend-boilerplate"
+compatibility_date = "2026-03-06"
+
+[vars]
+PULSEFM_BACKEND_MIGRATION_PHASE = "phase1-boilerplate-only"

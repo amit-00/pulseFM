@@ -1,0 +1,87 @@
+name: cloudflare-backend-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_service:
+        description: Target backend service placeholder
+        required: true
+        default: vote-api
+        type: choice
+        options:
+          - vote-api
+          - playback-service
+          - playback-stream
+          - encoder
+          - modal-dispatch-service
+      environment:
+        description: Deployment environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Validate Cloudflare boilerplate
+        run: ./scripts/cloudflare/validate.sh
+
+      - name: Verify Cloudflare authentication
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./scripts/cloudflare/whoami.sh
+
+      - name: Report scaffold status
+        env:
+          TARGET_SERVICE: ${{ inputs.target_service }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          echo "Preflight complete for ${TARGET_SERVICE} in ${TARGET_ENV}."
+          echo "Phase 1 policy: backend deployment commands are intentionally disabled."
+
+  deploy_backend_scaffold:
+    name: Deploy scaffold
+    if: ${{ vars.ENABLE_CLOUDFLARE_BACKEND_DEPLOY == 'true' }}
+    needs: preflight
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Placeholder deploy gate
+        run: |
+          echo "ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true detected."
+          echo "No deploy command is configured in phase 1 boilerplate."
+          echo "Add service-specific wrangler deploy steps during phase 2 migration."
+
+  deploy_disabled_notice:
+    name: Deploy disabled
+    if: ${{ vars.ENABLE_CLOUDFLARE_BACKEND_DEPLOY != 'true' }}
+    needs: preflight
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Explain disabled deploy
+        run: |
+          echo "Cloudflare backend deploy is disabled in phase 1."
+          echo "Set repository variable ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true in phase 2."

@@ -1,0 +1,6 @@
+# Copy to infra/cloudflare/.dev.vars for local experiments.
+# Do not commit real values. Manage secrets in Cloudflare instead:
+#   printf '%s' '<value>' | wrangler secret put <SECRET_NAME> --config infra/cloudflare/wrangler.toml
+
+PULSEFM_ENV=development
+PULSEFM_REGION=global
