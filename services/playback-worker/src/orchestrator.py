@@ -8,7 +8,7 @@ from helpers import parse_int, read_value, utc_ms
 from song_repository import SongRepository
 
 STATE_KEY = "playback-state-v2"
-EVENT_TYPE_TICK = "tick"
+EVENT_TYPE_NEXT_SONG = "next_song"
 EVENT_TYPE_CLOSE_POLL = "close_poll"
 
 
@@ -21,7 +21,7 @@ class PlaybackOrchestrator:
 
     async def state_snapshot(self) -> dict[str, Any]:
         state = await self._get_state()
-        await self._ensure_startup_tick(state)
+        await self._ensure_startup_next_song(state)
         return self._snapshot_response(state)
 
     async def handle_alarm(self) -> None:
@@ -42,14 +42,14 @@ class PlaybackOrchestrator:
     async def _handle_event(self, state: dict[str, Any], event: dict[str, Any]) -> None:
         event_type = read_value(event, "type")
 
-        if event_type == EVENT_TYPE_TICK:
-            await self._run_tick(state)
+        if event_type == EVENT_TYPE_NEXT_SONG:
+            await self._run_next_song(state)
             return
 
         if event_type == EVENT_TYPE_CLOSE_POLL:
             await self._run_close_poll(state, event)
 
-    async def _run_tick(self, state: dict[str, Any]) -> None:
+    async def _run_next_song(self, state: dict[str, Any]) -> None:
         now = utc_ms()
         current_version = int(state.get("version") or 0)
         promoted_song = state.get("nextSong") or self._config.stubbed_song()
@@ -114,8 +114,8 @@ class PlaybackOrchestrator:
         self._enqueue_event(
             state,
             {
-                "id": self._tick_event_id(next_version + 1),
-                "type": EVENT_TYPE_TICK,
+                "id": self._next_song_event_id(next_version + 1),
+                "type": EVENT_TYPE_NEXT_SONG,
                 "dueAt": int(state["currentSong"]["endAt"]),
                 "payload": {"version": next_version + 1},
             },
@@ -178,20 +178,23 @@ class PlaybackOrchestrator:
         next_due_at = min(parse_int(read_value(event, "dueAt"), 0) or 0 for event in events)
         await self._ctx.storage.setAlarm(next_due_at)
 
-    async def _ensure_startup_tick(self, state: dict[str, Any]) -> None:
-        has_tick_event = any(read_value(event, "type") == EVENT_TYPE_TICK for event in state.get("scheduledEvents", []))
-        if has_tick_event:
+    async def _ensure_startup_next_song(self, state: dict[str, Any]) -> None:
+        has_next_song_event = any(
+            read_value(event, "type") == EVENT_TYPE_NEXT_SONG
+            for event in state.get("scheduledEvents", [])
+        )
+        if has_next_song_event:
             return
 
-        first_tick_version = int(state.get("version") or 0) + 1
-        due_at = utc_ms() + self._config.startup_tick_delay_ms
+        first_next_song_version = int(state.get("version") or 0) + 1
+        due_at = utc_ms() + self._config.startup_next_song_delay_ms
         self._enqueue_event(
             state,
             {
-                "id": self._tick_event_id(first_tick_version),
-                "type": EVENT_TYPE_TICK,
+                "id": self._next_song_event_id(first_next_song_version),
+                "type": EVENT_TYPE_NEXT_SONG,
                 "dueAt": due_at,
-                "payload": {"version": first_tick_version},
+                "payload": {"version": first_next_song_version},
             },
         )
         state["updatedAt"] = utc_ms()
@@ -226,8 +229,8 @@ class PlaybackOrchestrator:
             "updatedAt": state.get("updatedAt"),
         }
 
-    def _tick_event_id(self, version: int) -> str:
-        return f"tick:{version}"
+    def _next_song_event_id(self, version: int) -> str:
+        return f"next_song:{version}"
 
     def _close_poll_event_id(self, vote_id: str, version: int) -> str:
         return f"close:{vote_id}:{version}"
