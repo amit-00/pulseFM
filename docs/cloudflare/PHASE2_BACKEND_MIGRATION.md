@@ -1,19 +1,22 @@
 # Phase 2 Backend Migration Backlog
 
-## Proposed migration sequence
+## Completed
 
-1. Migrate `vote-api` request handling and queue-dispatch flow.
-2. Migrate `playback-service` orchestration endpoints and scheduling contracts.
-3. Migrate `playback-stream` state + SSE fanout behavior.
-4. Migrate `encoder` event-trigger pipeline.
-5. Migrate `modal-dispatch-service` warmup/dispatch path.
-6. Rewire client/API proxy targets from GCP endpoints to Cloudflare endpoints.
+1. Migrated playback orchestration to Cloudflare Worker + Durable Object + D1.
+
+## Remaining migration sequence
+
+1. Migrate `vote-api` request handling and tally flow.
+2. Migrate `playback-stream` SSE state fanout.
+3. Migrate `encoder` event-trigger pipeline.
+4. Migrate `modal-dispatch-service` warmup/dispatch path.
+5. Rewire client/API proxy targets from GCP endpoints to Cloudflare endpoints.
 
 ## Cutover checkpoints
 
-1. Confirm per-service parity tests pass in staging traffic replay.
-2. Validate secret parity (Cloudflare managed secrets vs existing runtime values).
-3. Validate queue/event behavior under retry and out-of-order delivery.
-4. Run canary cutover per service with rollback procedure documented.
+1. Confirm service-level parity tests pass in staging replay.
+2. Validate Cloudflare managed secret parity with runtime requirements.
+3. Validate failure handling (alarm retries, stale version requests, D1 contention).
+4. Run canary cutover per service with rollback procedures.
 5. Confirm observability parity (error rate, latency, queue depth, stream stability).
-6. Execute production cutover window and lock post-cutover verification checklist.
+6. Execute production cutover and lock verification checklist.
