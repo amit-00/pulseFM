@@ -194,6 +194,8 @@ class PlaybackOrchestrator:
         if has_next_song_event:
             return
 
+        await self._prime_startup_next_song(state)
+
         first_next_song_version = int(state.get("version") or 0) + 1
         due_at = utc_ms() + self._config.startup_next_song_delay_ms
         self._enqueue_event(
@@ -207,6 +209,19 @@ class PlaybackOrchestrator:
         )
         state["updatedAt"] = utc_ms()
         await self._persist_state(state)
+
+    async def _prime_startup_next_song(self, state: dict[str, Any]) -> None:
+        is_first_cycle = int(state.get("version") or 0) == 0 and state.get("currentSong") is None
+        if not is_first_cycle:
+            return
+
+        first_ready_song = await self._songs.select_next_ready_song(None)
+        if not first_ready_song:
+            state["nextSong"] = self._config.stubbed_song()
+            return
+
+        await self._songs.mark_song_status(str(first_ready_song["voteId"]), "queued")
+        state["nextSong"] = first_ready_song
 
     def _split_due_events(
         self,
