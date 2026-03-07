@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 from config import RuntimeConfig
-from helpers import parse_int, read_value, utc_ms
+from helpers import parse_int, utc_ms
 from song_repository import SongRepository
 
 STATE_KEY = "playback-state-v2"
@@ -15,8 +15,16 @@ EVENT_TYPE_CLOSE_POLL = "close_poll"
 class PlaybackOrchestrator:
     def __init__(self, ctx, env) -> None:
         self._ctx = ctx
-        self._config = RuntimeConfig.from_env(env)
-        self._songs = SongRepository(read_value(env, "PLAYBACK_DB"))
+        self._config = RuntimeConfig.from_env(
+            {
+                "VOTE_OPTIONS": getattr(env, "VOTE_OPTIONS", ""),
+                "OPTIONS_PER_WINDOW": getattr(env, "OPTIONS_PER_WINDOW", "4"),
+                "STUBBED_DURATION_MS": getattr(env, "STUBBED_DURATION_MS", "300000"),
+                "VOTE_CLOSE_LEAD_SECONDS": getattr(env, "VOTE_CLOSE_LEAD_SECONDS", "60"),
+                "STARTUP_NEXT_SONG_DELAY_SECONDS": getattr(env, "STARTUP_NEXT_SONG_DELAY_SECONDS", "5"),
+            }
+        )
+        self._songs = SongRepository(env.PLAYBACK_DB)
         self._state_cache: dict[str, Any] | None = None
 
     async def state_snapshot(self) -> dict[str, Any]:
@@ -40,7 +48,7 @@ class PlaybackOrchestrator:
         await self._persist_state(state)
 
     async def _handle_event(self, state: dict[str, Any], event: dict[str, Any]) -> None:
-        event_type = read_value(event, "type")
+        event_type = event.get("type")
 
         if event_type == EVENT_TYPE_NEXT_SONG:
             await self._run_next_song(state)
@@ -54,8 +62,8 @@ class PlaybackOrchestrator:
         current_version = int(state.get("version") or 0)
         promoted_song = state.get("nextSong") or self._config.stubbed_song()
 
-        promoted_vote_id = str(read_value(promoted_song, "voteId", "stubbed"))
-        promoted_duration_ms = parse_int(read_value(promoted_song, "durationMs"), self._config.stubbed_duration_ms)
+        promoted_vote_id = str(promoted_song.get("voteId", "stubbed"))
+        promoted_duration_ms = parse_int(promoted_song.get("durationMs"), self._config.stubbed_duration_ms)
         promoted_duration_ms = promoted_duration_ms or self._config.stubbed_duration_ms
 
         if promoted_vote_id != "stubbed":
@@ -81,7 +89,7 @@ class PlaybackOrchestrator:
             previous_poll["closedAt"] = now
 
         poll_duration_ms = max(0, promoted_duration_ms - self._config.vote_close_lead_ms)
-        previous_poll_version = int(read_value(previous_poll, "version", 0) or 0)
+        previous_poll_version = int((previous_poll or {}).get("version") or 0)
         poll_version = previous_poll_version + 1
         poll_vote_id = str(uuid.uuid4())
         poll_options = self._config.pick_vote_options()
@@ -126,15 +134,15 @@ class PlaybackOrchestrator:
         if not poll:
             return
 
-        payload = read_value(event, "payload", {}) or {}
-        expected_vote_id = str(read_value(payload, "voteId", ""))
-        expected_version = parse_int(read_value(payload, "version"), 0) or 0
+        payload = event.get("payload", {}) or {}
+        expected_vote_id = str(payload.get("voteId", ""))
+        expected_version = parse_int(payload.get("version"), 0) or 0
 
         if poll.get("status") != "OPEN":
             return
-        if str(read_value(poll, "voteId", "")) != expected_vote_id:
+        if str(poll.get("voteId", "")) != expected_vote_id:
             return
-        if int(read_value(poll, "version", 0) or 0) != expected_version:
+        if int(poll.get("version", 0) or 0) != expected_version:
             return
 
         poll["status"] = "CLOSED"
@@ -175,12 +183,12 @@ class PlaybackOrchestrator:
             await self._ctx.storage.deleteAlarm()
             return
 
-        next_due_at = min(parse_int(read_value(event, "dueAt"), 0) or 0 for event in events)
+        next_due_at = min(parse_int(event.get("dueAt"), 0) or 0 for event in events)
         await self._ctx.storage.setAlarm(next_due_at)
 
     async def _ensure_startup_next_song(self, state: dict[str, Any]) -> None:
         has_next_song_event = any(
-            read_value(event, "type") == EVENT_TYPE_NEXT_SONG
+            event.get("type") == EVENT_TYPE_NEXT_SONG
             for event in state.get("scheduledEvents", [])
         )
         if has_next_song_event:
@@ -200,23 +208,31 @@ class PlaybackOrchestrator:
         state["updatedAt"] = utc_ms()
         await self._persist_state(state)
 
-    def _split_due_events(self, events: list[dict[str, Any]], now_ms: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def _split_due_events(
+        self,
+        events: list[dict[str, Any]],
+        now_ms: int,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         due_events: list[dict[str, Any]] = []
         future_events: list[dict[str, Any]] = []
 
         for event in events:
-            due_at = parse_int(read_value(event, "dueAt"), 0) or 0
+            due_at = parse_int(event.get("dueAt"), 0) or 0
             if due_at <= now_ms:
                 due_events.append(event)
             else:
                 future_events.append(event)
 
-        due_events.sort(key=lambda event: parse_int(read_value(event, "dueAt"), 0) or 0)
+        due_events.sort(key=lambda event: parse_int(event.get("dueAt"), 0) or 0)
         return due_events, future_events
 
     def _enqueue_event(self, state: dict[str, Any], event: dict[str, Any]) -> None:
-        target_id = str(read_value(event, "id", ""))
-        deduped = [existing for existing in state.get("scheduledEvents", []) if read_value(existing, "id") != target_id]
+        target_id = str(event.get("id", ""))
+        deduped = [
+            existing
+            for existing in state.get("scheduledEvents", [])
+            if existing.get("id") != target_id
+        ]
         deduped.append(event)
         state["scheduledEvents"] = deduped
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from helpers import parse_int, read_value, utc_ms
+from helpers import parse_int, utc_ms
 
 
 class SongRepository:
@@ -20,13 +20,24 @@ class SongRepository:
             )
 
         result = await query.run()
-        rows = read_value(result, "results", []) or []
+        if isinstance(result, dict):
+            rows = result.get("results", []) or []
+        else:
+            rows = getattr(result, "results", []) or []
         if not rows:
             return None
 
         first = rows[0]
-        vote_id = read_value(first, "id")
-        duration_ms = parse_int(read_value(first, "duration_ms"))
+        if isinstance(first, dict):
+            row = first
+        else:
+            row = {
+                "id": getattr(first, "id", None),
+                "duration_ms": getattr(first, "duration_ms", None),
+            }
+
+        vote_id = row.get("id")
+        duration_ms = parse_int(row.get("duration_ms"))
         if not vote_id or duration_ms is None or duration_ms <= 0:
             return None
 

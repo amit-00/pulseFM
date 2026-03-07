@@ -15,23 +15,3 @@ def parse_int(value: Any, default: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def read_value(container: Any, key: str, default: Any = None) -> Any:
-    if container is None:
-        return default
-
-    try:
-        return container.get(key, default)
-    except Exception:
-        pass
-
-    try:
-        return getattr(container, key)
-    except Exception:
-        pass
-
-    try:
-        return container[key]
-    except Exception:
-        return default
