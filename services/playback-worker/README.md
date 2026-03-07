@@ -2,14 +2,9 @@
 
 Python Cloudflare Worker + Durable Object replacement for `services/playback-service`.
 
-## Endpoints
+## Public endpoint
 
-- `POST /tick`
-- `POST /vote/close`
-- `POST /next/refresh`
-- `POST /songs/upsert` (temporary migration helper)
 - `GET /state`
-- `GET /health`
 
 ## Storage model
 
@@ -18,9 +13,8 @@ Python Cloudflare Worker + Durable Object replacement for `services/playback-ser
 
 ## Scheduling model
 
-The DO uses a persisted scheduled-event queue and a single DO alarm:
-- `tick:<version>` for next rotation
-- `close:<voteId>:<version>` for vote close
+Playback orchestration is internal and alarm-driven only.  
+The DO keeps a persisted scheduled-event queue and runs all changeover/poll-close logic from alarm handlers.
 
 ## Trust model (migration phase)
 
