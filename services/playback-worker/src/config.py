@@ -9,7 +9,6 @@ from helpers import parse_int
 DEFAULT_VOTE_OPTIONS = ["energetic", "dark", "uplifting", "cinematic"]
 DEFAULT_STUBBED_DURATION_MS = 300_000
 DEFAULT_VOTE_CLOSE_LEAD_SECONDS = 60
-DEFAULT_STARTUP_NEXT_SONG_DELAY_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -18,7 +17,6 @@ class RuntimeConfig:
     options_per_window: int
     stubbed_duration_ms: int
     vote_close_lead_ms: int
-    startup_next_song_delay_ms: int
 
     @classmethod
     def from_env(cls, env_values: dict[str, Any]) -> "RuntimeConfig":
@@ -47,19 +45,11 @@ class RuntimeConfig:
         if vote_close_lead_seconds < 0:
             vote_close_lead_seconds = 0
 
-        startup_delay_seconds = parse_int(
-            env_values.get("STARTUP_NEXT_SONG_DELAY_SECONDS"),
-            DEFAULT_STARTUP_NEXT_SONG_DELAY_SECONDS,
-        ) or DEFAULT_STARTUP_NEXT_SONG_DELAY_SECONDS
-        if startup_delay_seconds < 0:
-            startup_delay_seconds = 0
-
         return cls(
             vote_options=vote_options,
             options_per_window=options_per_window,
             stubbed_duration_ms=stubbed_duration_ms,
             vote_close_lead_ms=vote_close_lead_seconds * 1000,
-            startup_next_song_delay_ms=startup_delay_seconds * 1000,
         )
 
     def pick_vote_options(self) -> list[str]:

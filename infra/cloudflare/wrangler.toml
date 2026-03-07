@@ -9,7 +9,6 @@ OPTIONS_PER_WINDOW = "4"
 VOTE_OPTIONS = "energetic,dark,uplifting,cinematic,ambient,driving"
 VOTE_CLOSE_LEAD_SECONDS = "60"
 STUBBED_DURATION_MS = "300000"
-STARTUP_NEXT_SONG_DELAY_SECONDS = "5"
 
 [[durable_objects.bindings]]
 name = "PLAYBACK_STATE"
