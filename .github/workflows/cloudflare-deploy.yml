@@ -4,16 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       target_service:
-        description: Target backend service placeholder
+        description: Target backend service
         required: true
-        default: vote-api
+        default: playback-worker
         type: choice
         options:
-          - vote-api
-          - playback-service
-          - playback-stream
-          - encoder
-          - modal-dispatch-service
+          - playback-worker
       environment:
         description: Deployment environment
         required: true
@@ -44,7 +40,7 @@ jobs:
       - name: Install Wrangler
         run: npm install --global wrangler@4
 
-      - name: Validate Cloudflare boilerplate
+      - name: Validate Cloudflare playback-worker config
         run: ./scripts/cloudflare/validate.sh
 
       - name: Verify Cloudflare authentication
@@ -53,26 +49,36 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: ./scripts/cloudflare/whoami.sh
 
-      - name: Report scaffold status
-        env:
-          TARGET_SERVICE: ${{ inputs.target_service }}
-          TARGET_ENV: ${{ inputs.environment }}
-        run: |
-          echo "Preflight complete for ${TARGET_SERVICE} in ${TARGET_ENV}."
-          echo "Phase 1 policy: backend deployment commands are intentionally disabled."
-
-  deploy_backend_scaffold:
-    name: Deploy scaffold
-    if: ${{ vars.ENABLE_CLOUDFLARE_BACKEND_DEPLOY == 'true' }}
+  deploy_playback_worker:
+    name: Deploy playback-worker
+    if: ${{ vars.ENABLE_CLOUDFLARE_BACKEND_DEPLOY == 'true' && inputs.target_service == 'playback-worker' }}
     needs: preflight
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
 
     steps:
-      - name: Placeholder deploy gate
-        run: |
-          echo "ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true detected."
-          echo "No deploy command is configured in phase 1 boilerplate."
-          echo "Add service-specific wrangler deploy steps during phase 2 migration."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Apply D1 migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler d1 migrations apply PLAYBACK_DB --remote --config infra/cloudflare/wrangler.toml
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy --config infra/cloudflare/wrangler.toml
 
   deploy_disabled_notice:
     name: Deploy disabled
@@ -83,5 +89,5 @@ jobs:
     steps:
       - name: Explain disabled deploy
         run: |
-          echo "Cloudflare backend deploy is disabled in phase 1."
-          echo "Set repository variable ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true in phase 2."
+          echo "Cloudflare backend deploy is disabled."
+          echo "Set repository variable ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true to enable deployment."

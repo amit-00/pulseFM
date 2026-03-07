@@ -7,6 +7,7 @@ on:
       - 'infra/cloudflare/**'
       - 'docs/cloudflare/**'
       - 'scripts/cloudflare/**'
+      - 'services/playback-worker/**'
       - '.github/workflows/cloudflare-*.yml'
   workflow_dispatch:
 
@@ -26,5 +27,5 @@ jobs:
       - name: Install Wrangler
         run: npm install --global wrangler@4
 
-      - name: Validate Cloudflare boilerplate
+      - name: Validate Cloudflare playback-worker config
         run: ./scripts/cloudflare/validate.sh

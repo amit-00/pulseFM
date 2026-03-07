@@ -344,17 +344,21 @@ Audio delivery currently uses direct public object URLs from `pulsefm-generated-
 
 Cloud Build trigger management is intentionally outside Terraform.
 
-### Cloudflare backend boilerplate (phase 1)
+### Cloudflare playback-worker migration (current slice)
 
-Cloudflare migration scaffolding is now available for backend services under:
+Cloudflare migration now includes an implemented playback worker slice:
 
 - `infra/cloudflare/`
 - `scripts/cloudflare/`
 - `docs/cloudflare/`
+- `services/playback-worker/`
 - `.github/workflows/cloudflare-validate.yml`
 - `.github/workflows/cloudflare-deploy.yml`
 
-Phase 1 is intentionally non-deploying and resource-free. It does not create or deploy Workers, Pages, routes, or storage bindings.
+Current status:
+- `playback-service` replacement implemented as a Python Worker + Durable Object + D1 (`services/playback-worker`).
+- Existing event-bus compatibility for this slice is intentionally dropped.
+- Temporary network-level trust model is in use during migration.
 
 ### Bootstrap image script
 

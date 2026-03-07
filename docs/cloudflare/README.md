@@ -1,58 +1,35 @@
-# Cloudflare Backend Boilerplate (Phase 1)
+# Cloudflare Backend Migration
 
-This repository now includes Cloudflare deployment scaffolding for **backend migration only**.
+Playback service migration is now implemented as a **Python** Cloudflare Worker + Durable Object + D1.
 
-Phase 1 is intentionally limited to boilerplate:
-- metadata-only Wrangler config,
-- service secret templates,
-- setup/validation scripts,
-- GitHub Actions workflow scaffolding.
+## Implemented slice
 
-It does **not** create or deploy Workers, Pages, routes, KV, D1, R2, or queues.
+- Worker + Durable Object entrypoint: `services/playback-worker/src/entry.py`
+- D1 schema: `services/playback-worker/migrations/d1/0001_init.sql`
+- Wrangler deployment config: `infra/cloudflare/wrangler.toml`
 
-## Directory layout
+## Runtime model
 
-- `infra/cloudflare/wrangler.toml`: metadata-only Cloudflare config.
-- `infra/cloudflare/.dev.vars.example`: non-secret local vars template.
-- `infra/cloudflare/env/*.secrets.example`: per-service secret name templates.
-- `scripts/cloudflare/whoami.sh`: auth check wrapper.
-- `scripts/cloudflare/validate.sh`: boilerplate guardrails + Wrangler config validation.
+- `PlaybackStateDurableObject` is canonical for playback state and scheduling.
+- Worker exposes only `GET /state` for on-demand snapshot reads.
+- Playback orchestration is internal (alarm-driven), not HTTP-driven.
+- D1 stores song rows used for candidate selection and state transitions.
+- Event-bus compatibility with previous GCP Pub/Sub/Eventarc flow is intentionally dropped.
+- Temporary network-level trust model is in effect (no app-level auth yet).
 
-## Local setup
-
-1. Install Wrangler (`npm i -g wrangler@4`), or rely on `npx` fallback in scripts.
-2. Authenticate:
-   ```bash
-   ./scripts/cloudflare/whoami.sh
-   ```
-3. Validate phase-1 boilerplate:
-   ```bash
-   ./scripts/cloudflare/validate.sh
-   ```
-
-## Cloudflare managed secrets
-
-Use Cloudflare-managed secrets as the source of truth:
+## Local checks
 
 ```bash
-printf '%s' '<value>' | wrangler secret put PULSEFM_REDIS_URL --config infra/cloudflare/wrangler.toml
+./scripts/cloudflare/validate.sh
 ```
 
-Repeat for keys listed in:
-- `infra/cloudflare/env/common.secrets.example`
-- `infra/cloudflare/env/vote-api.secrets.example`
-- `infra/cloudflare/env/playback-service.secrets.example`
-- `infra/cloudflare/env/playback-stream.secrets.example`
-- `infra/cloudflare/env/encoder.secrets.example`
-- `infra/cloudflare/env/modal-dispatch-service.secrets.example`
+## Deploy flow (GitHub Actions)
 
-## GitHub Actions expectations
+Workflow: `.github/workflows/cloudflare-deploy.yml`
 
-Create these repository secrets before enabling deployment workflows:
+Required repo secrets:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-Optional repository variable for future activation:
+Required repo variable to enable deployment:
 - `ENABLE_CLOUDFLARE_BACKEND_DEPLOY=true`
-
-The deploy workflow is intentionally scaffold-only in phase 1.
