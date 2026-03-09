@@ -9,41 +9,60 @@ class SongRepository:
     def __init__(self, d1_database) -> None:
         self._db = d1_database
 
-    async def select_next_ready_song(self, exclude_vote_id: str | None) -> dict[str, Any] | None:
-        if exclude_vote_id:
-            query = self._db.prepare(
-                "SELECT id, duration_ms FROM songs WHERE status = 'ready' AND id != ? ORDER BY created_at DESC LIMIT 1"
-            ).bind(exclude_vote_id)
-        else:
-            query = self._db.prepare(
-                "SELECT id, duration_ms FROM songs WHERE status = 'ready' ORDER BY created_at DESC LIMIT 1"
-            )
+    async def get_next_ready_song(
+        self,
+        exclude_song_ids: set[str] | None = None,
+    ) -> dict[str, Any] | None:
+        excluded = sorted(exclude_song_ids or set())
+        placeholders = ", ".join("?" for _ in excluded)
+
+        sql = "SELECT id, duration_ms FROM songs WHERE status = 'ready'"
+        if excluded:
+            sql += f" AND id NOT IN ({placeholders})"
+        sql += " ORDER BY created_at ASC LIMIT 1"
+
+        query = self._db.prepare(sql)
+        if excluded:
+            query = query.bind(*excluded)
 
         result = await query.run()
+        rows = self._extract_rows(result)
+        if not rows:
+            return None
+
+        row = rows[0]
+        song_id = row.get("id")
+        duration_ms = parse_int(row.get("duration_ms"))
+        if not song_id or duration_ms is None or duration_ms <= 0:
+            return None
+
+        return {"songId": str(song_id), "duration_ms": duration_ms}
+
+    async def mark_song_queued(self, song_id: str) -> None:
+        await self._db.prepare(
+            "UPDATE songs SET status = 'queued', updated_at = ? WHERE id = ?"
+        ).bind(utc_ms(), song_id).run()
+
+    async def mark_song_played(self, song_id: str) -> None:
+        await self._db.prepare(
+            "UPDATE songs SET status = 'played', updated_at = ? WHERE id = ?"
+        ).bind(utc_ms(), song_id).run()
+
+    def _extract_rows(self, result: Any) -> list[dict[str, Any]]:
         if isinstance(result, dict):
             rows = result.get("results", []) or []
         else:
             rows = getattr(result, "results", []) or []
-        if not rows:
-            return None
 
-        first = rows[0]
-        if isinstance(first, dict):
-            row = first
-        else:
-            row = {
-                "id": getattr(first, "id", None),
-                "duration_ms": getattr(first, "duration_ms", None),
-            }
-
-        vote_id = row.get("id")
-        duration_ms = parse_int(row.get("duration_ms"))
-        if not vote_id or duration_ms is None or duration_ms <= 0:
-            return None
-
-        return {"voteId": str(vote_id), "durationMs": duration_ms}
-
-    async def mark_song_status(self, vote_id: str, status: str) -> None:
-        await self._db.prepare(
-            "UPDATE songs SET status = ?, updated_at = ? WHERE id = ?"
-        ).bind(status, utc_ms(), vote_id).run()
+        extracted: list[dict[str, Any]] = []
+        for item in rows:
+            if isinstance(item, dict):
+                extracted.append(item)
+            else:
+                extracted.append(
+                    {
+                        "id": getattr(item, "id", None),
+                        "duration_ms": getattr(item, "duration_ms", None),
+                    }
+                )
+        return extracted

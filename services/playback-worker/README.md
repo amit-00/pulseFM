@@ -1,21 +1,22 @@
 # Playback Worker (Cloudflare, Python)
 
-Python Cloudflare Worker + Durable Object replacement for `services/playback-service`.
+Python Cloudflare Worker + Durable Object service that owns station playback state.
 
-## Public endpoint
+## API
 
-- `GET /state`
+- `GET /state`: Return the current station state snapshot.
+- `POST /start`: Initialize playback loop if it has not started yet.
 
-## Storage model
+## Station state
 
-- Durable Object (`PlaybackStateDurableObject`) is canonical for playback state + scheduling.
-- D1 (`PLAYBACK_DB`) stores song rows used for candidate selection (`ready -> queued -> played`).
+- `current_song`: `{ songId, duration_ms, start_at, end_at }`
+- `next_song`: `{ songId, duration_ms }`
+- `poll`: `{ options, start_at, end_at, is_open }`
 
-## Scheduling model
+## Playback loop
 
-Playback orchestration is internal and alarm-driven only.  
-The DO keeps a persisted scheduled-event queue and runs all changeover/poll-close logic from alarm handlers.
+1. Start state sets `current_song`, selects `next_song` from D1 (`status='ready'`, fallback to stubbed song), and opens a poll with 4 options.
+2. Alarm closes poll at `poll.end_at` by setting `is_open=false`.
+3. Alarm advances loop at `current_song.end_at`: promote `next_song` to `current_song`, fetch a new `next_song`, and open a new poll.
 
-## Trust model (migration phase)
-
-Temporary network-level trust: no app-layer auth in this service yet.
+The Durable Object always schedules its alarm for the next due event time.

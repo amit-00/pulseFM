@@ -13,10 +13,14 @@ class PlaybackStateDurableObject(DurableObject):
         self._orchestrator = PlaybackOrchestrator(ctx, env)
 
     async def fetch(self, request: Request) -> Response:
+        method = request.method.upper()
         path = urlparse(request.url).path
-        if request.method.upper() == "GET" and path == "/state":
-            snapshot = await self._orchestrator.state_snapshot()
-            return Response.json(snapshot)
+
+        if method == "GET" and path == "/state":
+            return Response.json(await self._orchestrator.state_snapshot())
+
+        if method == "POST" and path == "/start":
+            return Response.json(await self._orchestrator.start())
 
         return Response.json({"error": "not_found"}, status=404)
 
@@ -26,8 +30,10 @@ class PlaybackStateDurableObject(DurableObject):
 
 class Default(WorkerEntrypoint):
     async def fetch(self, request: Request) -> Response:
+        method = request.method.upper()
         path = urlparse(request.url).path
-        if request.method.upper() != "GET" or path != "/state":
+
+        if (method, path) not in {("GET", "/state"), ("POST", "/start")}:
             return Response.json({"error": "not_found"}, status=404)
 
         durable_object_id = self.env.PLAYBACK_STATE.idFromName("main")
