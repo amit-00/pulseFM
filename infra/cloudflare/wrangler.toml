@@ -1,9 +1,25 @@
-# Cloudflare backend migration boilerplate.
-# Phase 1 intentionally defines only project-level metadata and vars.
-# No Workers entrypoint, Pages project, routes, or bindings are declared yet.
-
-name = "pulsefm-backend-boilerplate"
-compatibility_date = "2026-03-06"
+name = "pulsefm-playback-worker"
+main = "services/playback-worker/src/entry.py"
+compatibility_date = "2026-03-07"
+compatibility_flags = ["python_workers"]
 
 [vars]
-PULSEFM_BACKEND_MIGRATION_PHASE = "phase1-boilerplate-only"
+PULSEFM_BACKEND_MIGRATION_PHASE = "playback-worker"
+OPTIONS_PER_WINDOW = "4"
+VOTE_OPTIONS = "energetic,dark,uplifting,cinematic,ambient,driving"
+VOTE_CLOSE_LEAD_SECONDS = "60"
+STUBBED_DURATION_MS = "300000"
+
+[[durable_objects.bindings]]
+name = "PLAYBACK_STATE"
+class_name = "PlaybackStateDurableObject"
+
+[[migrations]]
+tag = "playback-state-v1"
+new_sqlite_classes = ["PlaybackStateDurableObject"]
+
+[[d1_databases]]
+binding = "PLAYBACK_DB"
+database_name = "pulsefm-playback"
+database_id = "REPLACE_WITH_PLAYBACK_D1_DATABASE_ID"
+migrations_dir = "services/playback-worker/migrations/d1"
