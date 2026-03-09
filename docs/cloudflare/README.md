@@ -11,8 +11,8 @@ Playback service migration is now implemented as a **Python** Cloudflare Worker 
 ## Runtime model
 
 - `PlaybackStateDurableObject` is canonical for playback state and scheduling.
-- Worker exposes only `GET /state` for on-demand snapshot reads.
-- Playback orchestration is internal (alarm-driven), not HTTP-driven.
+- Worker exposes `GET /state` and `POST /start`.
+- Playback orchestration loop is alarm-driven after initialization.
 - D1 stores song rows used for candidate selection and state transitions.
 - Event-bus compatibility with previous GCP Pub/Sub/Eventarc flow is intentionally dropped.
 - Temporary network-level trust model is in effect (no app-level auth yet).
