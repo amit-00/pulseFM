@@ -10,7 +10,7 @@
 2. Migrate `playback-stream` SSE state fanout.
 3. Migrate `encoder` event-trigger pipeline.
 4. Migrate `modal-dispatch-service` warmup/dispatch path.
-5. Rewire client/API proxy targets from GCP endpoints to Cloudflare endpoints.
+5. Rewire web/API proxy targets from GCP endpoints to Cloudflare endpoints.
 
 ## Cutover checkpoints
 

@@ -4,9 +4,9 @@ Playback service migration is now implemented as a **Python** Cloudflare Worker 
 
 ## Implemented slice
 
-- Worker + Durable Object entrypoint: `services/playback-worker/src/entry.py`
-- D1 schema: `services/playback-worker/migrations/d1/0001_init.sql`
-- Wrangler deployment config: `infra/cloudflare/wrangler.toml`
+- Worker + Durable Object entrypoint: `apps/playback-worker/src/entry.py`
+- D1 schema: `apps/playback-worker/migrations/d1/0001_init.sql`
+- Wrangler deployment config: `apps/playback-worker/wrangler.toml`
 
 ## Runtime model
 

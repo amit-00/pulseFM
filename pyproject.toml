@@ -1,16 +1,6 @@
 [tool.uv.workspace]
-members = ["services/*", "packages/*", "functions/*"]
-
-[tool.uv.sources]
-pulsefm-models = { workspace = true }
-pulsefm-encoder = { workspace = true }
-pulsefm-worker = { workspace = true }
-pulsefm-auth = { workspace = true }
-pulsefm-redis = { workspace = true }
-pulsefm-pubsub = { workspace = true }
-pulsefm-vote-api = { workspace = true }
-pulsefm-descriptors = { workspace = true }
-pulsefm-tasks = { workspace = true }
-pulsefm-playback-service = { workspace = true }
-pulsefm-playback-stream = { workspace = true }
-pulsefm-modal-dispatch-service = { workspace = true }
+members = [
+  "apps/encoder",
+  "apps/playback-worker",
+  "apps/worker",
+]

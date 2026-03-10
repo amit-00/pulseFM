@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONFIG_PATH="$ROOT_DIR/infra/cloudflare/wrangler.toml"
+CONFIG_PATH="$ROOT_DIR/apps/playback-worker/wrangler.toml"
 
 run_wrangler() {
   if command -v wrangler >/dev/null 2>&1; then
@@ -13,12 +13,12 @@ run_wrangler() {
 }
 
 required_files=(
-  "$ROOT_DIR/infra/cloudflare/wrangler.toml"
+  "$ROOT_DIR/apps/playback-worker/wrangler.toml"
   "$ROOT_DIR/infra/cloudflare/.dev.vars.example"
   "$ROOT_DIR/infra/cloudflare/env/common.secrets.example"
   "$ROOT_DIR/infra/cloudflare/env/playback-worker.secrets.example"
-  "$ROOT_DIR/services/playback-worker/src/entry.py"
-  "$ROOT_DIR/services/playback-worker/migrations/d1/0001_init.sql"
+  "$ROOT_DIR/apps/playback-worker/src/entry.py"
+  "$ROOT_DIR/apps/playback-worker/migrations/d1/0001_init.sql"
 )
 
 for file in "${required_files[@]}"; do
@@ -59,12 +59,21 @@ required_patterns=(
   '^database_id\s*='
 )
 
-for pattern in "${required_patterns[@]}"; do
-  if ! rg -n "$pattern" "$CONFIG_PATH" >/dev/null; then
-    echo "Required playback-worker setting missing in $CONFIG_PATH: $pattern" >&2
-    exit 1
-  fi
-done
+python3 - "$CONFIG_PATH" "${required_patterns[@]}" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+patterns = sys.argv[2:]
+content = config_path.read_text(encoding="utf-8")
+
+for pattern in patterns:
+    if not re.search(pattern, content, flags=re.MULTILINE):
+        raise SystemExit(
+            f"Required playback-worker setting missing in {config_path}: {pattern}"
+        )
+PY
 
 if [[ "${SKIP_WRANGLER_VALIDATE:-0}" == "1" ]]; then
   echo "Skipping Wrangler CLI check (SKIP_WRANGLER_VALIDATE=1)."

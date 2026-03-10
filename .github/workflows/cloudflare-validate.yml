@@ -5,9 +5,10 @@ on:
     branches: [main]
     paths:
       - 'infra/cloudflare/**'
+      - 'apps/playback-worker/wrangler.toml'
       - 'docs/cloudflare/**'
       - 'scripts/cloudflare/**'
-      - 'services/playback-worker/**'
+      - 'apps/playback-worker/**'
       - '.github/workflows/cloudflare-*.yml'
   workflow_dispatch:
 

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-playback-worker"
+version = "0.1.0"
+description = "PulseFM Cloudflare playback worker."
+requires-python = ">=3.11"
+dependencies = [
+  "workers-py>=0.0.19",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pulsefm_playback_worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
