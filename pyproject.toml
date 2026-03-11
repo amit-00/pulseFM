@@ -3,4 +3,5 @@ members = [
   "apps/encoder",
   "apps/playback-worker",
   "apps/worker",
+  "packages/python-shared",
 ]

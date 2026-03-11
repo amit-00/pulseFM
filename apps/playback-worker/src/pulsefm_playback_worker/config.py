@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from pulsefm_playback_worker.helpers import parse_int
+from pulsefm_shared.helpers import parse_int
 
 DEFAULT_VOTE_OPTIONS = ["energetic", "dark", "uplifting", "cinematic", "ambient", "driving"]
 DEFAULT_OPTIONS_PER_WINDOW = 4

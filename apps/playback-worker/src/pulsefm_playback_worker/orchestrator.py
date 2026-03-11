@@ -4,8 +4,8 @@ from copy import deepcopy
 from typing import Any, Callable
 
 from pulsefm_playback_worker.config import RuntimeConfig, STUBBED_SONG_ID
-from pulsefm_playback_worker.helpers import utc_ms
-from pulsefm_playback_worker.repositories.song_repository import SongRepository
+from pulsefm_shared.helpers import utc_ms
+from pulsefm_shared.repositories import SongRepository
 
 STATE_KEY = "station-state-v1"
 

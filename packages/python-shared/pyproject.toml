@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-shared"
+version = "0.1.0"
+description = "Shared Python utilities for PulseFM apps."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pulsefm_shared*"]
+
+[tool.setuptools.package-data]
+pulsefm_shared = ["py.typed"]

@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+"""Song persistence adapter with typed contracts for callers."""
+
 from typing import Any
 
-from pulsefm_playback_worker.helpers import parse_int, utc_ms
+from pulsefm_shared.helpers import parse_int, utc_ms
 
 
 class SongRepository:
+    """Repository for selecting and transitioning songs in storage."""
+
     def __init__(self, db) -> None:
         self.db = db
 
     async def get_next_ready_song(
         self,
         exclude_song_ids: set[str] | None = None,
-    ) -> dict[str, Any] | None:
+    ):
+        """Return the next valid ready song not in ``exclude_song_ids``."""
         excluded = sorted(exclude_song_ids or set())
         placeholders = ", ".join("?" for _ in excluded)
 
@@ -39,31 +44,28 @@ class SongRepository:
         return {"songId": str(song_id), "duration_ms": duration_ms}
 
     async def mark_song_queued(self, song_id: str) -> None:
+        """Mark a song as queued to avoid duplicate selection."""
         await self.db.prepare(
             "UPDATE songs SET status = 'queued', updated_at = ? WHERE id = ?"
         ).bind(utc_ms(), song_id).run()
 
     async def mark_song_played(self, song_id: str) -> None:
+        """Mark a promoted song as played."""
         await self.db.prepare(
             "UPDATE songs SET status = 'played', updated_at = ? WHERE id = ?"
         ).bind(utc_ms(), song_id).run()
 
-    def _extract_rows(self, result: Any) -> list[dict[str, Any]]:
+    def _extract_rows(self, result: Any):
         if isinstance(result, dict):
             rows = result.get("results", []) or []
         else:
             rows = getattr(result, "results", []) or []
 
-        extracted: list[dict[str, Any]] = []
+        extracted = []
         for item in rows:
             if isinstance(item, dict):
                 extracted.append(item)
             else:
-                extracted.append(
-                    {
-                        "id": getattr(item, "id", None),
-                        "duration_ms": getattr(item, "duration_ms", None),
-                    }
-                )
+                extracted.append(item)
         return extracted
 
