@@ -25,8 +25,8 @@ class PollRepository:
         now = utc_ms()
         await self.db.prepare(
             "INSERT INTO polls (id, options, start_at, end_at, is_open, winner, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, TRUE, NULL, ?, ?)"
-        ).bind(poll_id, options, start_at, end_at, now, now).run()
+            "VALUES (?, ?, ?, ?, 1, NULL, ?, ?)"
+        ).bind(poll_id, json.dumps(options), start_at, end_at, now, now).run()
 
     async def close_poll(self, poll_id: str) -> None:
         """Close an existing poll and persist the current winning option."""
@@ -39,7 +39,7 @@ class PollRepository:
         winner = str(rows[0].get("option")) if rows and rows[0].get("option") else None
 
         await self.db.prepare(
-            "UPDATE polls SET is_open = FALSE, winner = ?, updated_at = ? WHERE id = ?"
+            "UPDATE polls SET is_open = 0, winner = ?, updated_at = ? WHERE id = ?"
         ).bind(winner, utc_ms(), poll_id).run()
 
     async def get_poll(self, poll_id: str):
@@ -78,18 +78,21 @@ class PollRepository:
             "updated_at": updated_at,
         }
 
-    async def vote(
+    async def upsert_vote(
         self,
         vote_id: str,
         user_id: str,
         poll_id: str,
         option: str,
     ) -> None:
-        """Persist a user vote for a poll option."""
+        """Insert a new vote or update an existing user's vote for a poll."""
         now = utc_ms()
         await self.db.prepare(
             "INSERT INTO poll_votes (id, poll_id, user_id, option, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)"
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(poll_id, user_id) DO UPDATE SET "
+            "option = excluded.option, "
+            "updated_at = excluded.updated_at"
         ).bind(vote_id, poll_id, user_id, option, now, now).run()
 
     def _extract_rows(self, result: Any):
