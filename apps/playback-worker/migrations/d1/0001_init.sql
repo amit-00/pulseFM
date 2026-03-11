@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS polls {
   start_at INTEGER NOT NULL,
   end_at INTEGER NOT NULL,
   is_open BOOLEAN NOT NULL DEFAULT TRUE,
+  winner TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 }
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS polls {
 CREATE TABLE IF NOT EXISTS poll_votes {
   id TEXT PRIMARY KEY,
   poll_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
   option TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

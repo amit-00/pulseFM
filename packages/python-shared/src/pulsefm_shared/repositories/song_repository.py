@@ -2,8 +2,6 @@ from __future__ import annotations
 
 """Song persistence adapter with typed contracts for callers."""
 
-from typing import Any
-
 from pulsefm_shared.helpers import parse_int, utc_ms
 
 
@@ -41,7 +39,10 @@ class SongRepository:
         if not song_id or duration_ms is None or duration_ms <= 0:
             return None
 
-        return {"songId": str(song_id), "duration_ms": duration_ms}
+        return {
+            "songId": str(song_id),
+            "duration_ms": duration_ms,
+        }
 
     async def mark_song_queued(self, song_id: str) -> None:
         """Mark a song as queued to avoid duplicate selection."""
@@ -55,7 +56,7 @@ class SongRepository:
             "UPDATE songs SET status = 'played', updated_at = ? WHERE id = ?"
         ).bind(utc_ms(), song_id).run()
 
-    def _extract_rows(self, result: Any):
+    def _extract_rows(self, result):
         if isinstance(result, dict):
             rows = result.get("results", []) or []
         else:
