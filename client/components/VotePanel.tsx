@@ -18,6 +18,7 @@ interface VotePanelProps {
   error: string | null;
   onSubmitVote: (optionKey: string) => void;
   isWinnerLoading?: boolean;
+  redisAvailable?: boolean;
 }
 
 export function VotePanel({
@@ -31,11 +32,12 @@ export function VotePanel({
   error,
   onSubmitVote,
   isWinnerLoading = false,
+  redisAvailable = true,
 }: VotePanelProps) {
   const optionEntries = Object.entries(voteData.options);
   const totalVotes = Object.values(voteData.tallies).reduce((sum, n) => sum + n, 0);
   const voteClosed = voteData.status === "CLOSED" || isExpired;
-  const disabled = hasVoted || isSubmitting || voteClosed;
+  const disabled = hasVoted || isSubmitting || voteClosed || !redisAvailable;
   const winnerLabel = voteData.winnerOption
     ? (voteData.options[voteData.winnerOption] ?? voteData.winnerOption)
     : null;
@@ -128,7 +130,13 @@ export function VotePanel({
         </div>
       )}
 
-      {error && (
+      {!redisAvailable && (
+        <div className="p-2 rounded-lg text-xs bg-amber-500/15 text-amber-300 border border-amber-500/30">
+          Voting temporarily unavailable &mdash; waiting for system recovery
+        </div>
+      )}
+
+      {error && redisAvailable && (
         <div className="p-2 rounded-lg text-xs bg-red-500/20 text-red-300 border border-red-500/30">
           {error}
         </div>
