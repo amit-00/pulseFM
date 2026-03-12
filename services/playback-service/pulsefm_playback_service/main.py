@@ -344,8 +344,8 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         tallies = await get_poll_tallies(get_redis_client(), vote_id)
     except Exception:
-        logger.exception("Failed to load tallies from Redis", extra={"voteId": vote_id})
-        raise
+        logger.warning("Redis unavailable for tallies; using fallback zeros", extra={"voteId": vote_id})
+        tallies = {}
     if not tallies:
         tallies = {option: 0 for option in (state.get("options") or [])}
     winner_option = _pick_winner(tallies)
@@ -363,8 +363,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED")
     except Exception:
-        logger.exception("Failed to update playback snapshot poll status on close", extra={"voteId": vote_id})
-        raise
+        logger.warning("Redis unavailable for poll status update; continuing", extra={"voteId": vote_id})
 
     logger.info("Closed vote", extra={"voteId": vote_id, "winner": winner_option})
     _publish_vote_event("CLOSE", vote_id, winner_option)
@@ -729,8 +728,7 @@ async def refresh_next_song(payload: Dict[str, Any]) -> Dict[str, Any]:
                     {"voteId": canonical_vote_id, "durationMs": canonical_duration_ms, "version": canonical_version},
                 )
         except Exception:
-            logger.exception("Failed to publish next-song change", extra={"voteId": result.get("voteId")})
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish next-song change")
+            logger.warning("Redis unavailable for next-song reconciliation; continuing", extra={"voteId": result.get("voteId")})
 
     logger.info(
         "Refresh next request handled",
@@ -766,8 +764,7 @@ async def tick(payload: Dict[str, Any]) -> Dict[str, Any]:
             rotation.duration_ms, window["options"], snapshot,
         )
     except Exception:
-        logger.exception("Failed to update Redis playback snapshot", extra={"voteId": window.get("voteId")})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
+        logger.warning("Redis unavailable during tick; playback loop continues without Redis state", extra={"voteId": window.get("voteId")})
 
     try:
         _publish_changeover_events(rotation, request_version)
