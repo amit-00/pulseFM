@@ -8,10 +8,15 @@ services:
       - "8081:8080"
     environment:
       - PORT=8080
+      - PROJECT_ID=local-project
+      - LOCATION=northamerica-northeast1
       - RAW_BUCKET=pulsefm-generated-songs
       - RAW_PREFIX=raw/
       - ENCODED_BUCKET=pulsefm-generated-songs
       - ENCODED_PREFIX=encoded/
+      - PLAYBACK_QUEUE_NAME=playback-queue
+      - PLAYBACK_SERVICE_URL=http://playback-service:8080
+      - TASKS_OIDC_SERVICE_ACCOUNT=
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account-key.json
       - PYTHONUNBUFFERED=1
     volumes:

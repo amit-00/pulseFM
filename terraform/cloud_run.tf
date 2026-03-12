@@ -72,6 +72,14 @@ resource "google_cloud_run_v2_service" "encoder" {
     containers {
       image = var.encoder_image
       env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "LOCATION"
+        value = var.region
+      }
+      env {
         name  = "RAW_BUCKET"
         value = "pulsefm-generated-songs"
       }
@@ -92,12 +100,16 @@ resource "google_cloud_run_v2_service" "encoder" {
         value = "public,max-age=300,s-maxage=3600"
       }
       env {
-        name  = "REDIS_HOST"
-        value = google_redis_instance.memorystore.host
+        name  = "PLAYBACK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.playback_queue.name
       }
       env {
-        name  = "REDIS_PORT"
-        value = tostring(google_redis_instance.memorystore.port)
+        name  = "PLAYBACK_SERVICE_URL"
+        value = google_cloud_run_v2_service.playback_service.uri
+      }
+      env {
+        name  = "TASKS_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.playback_service.email
       }
     }
   }
