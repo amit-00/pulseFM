@@ -12,7 +12,7 @@ from google.cloud.firestore import AsyncClient
 from redis.asyncio import Redis
 
 from pulsefm_pubsub.client import decode_pubsub_json
-from pulsefm_redis.client import get_playback_current_snapshot, get_redis_client, poll_tally_key
+from pulsefm_redis.client import get_playback_current_snapshot, get_redis_client, ping_redis, poll_tally_key
 
 from pulsefm_playback_stream.config import settings
 
@@ -288,8 +288,8 @@ async def _get_state_snapshot(state: StreamState, db: AsyncClient) -> Dict[str, 
 # ---------------------------------------------------------------------------
 
 
-async def _get_tallies(redis_client: Redis, vote_id: str | None) -> Dict[str, int]:
-    if not vote_id:
+async def _get_tallies(redis_client: Redis | None, vote_id: str | None) -> Dict[str, int]:
+    if not vote_id or redis_client is None:
         return {}
     raw = await redis_client.hgetall(poll_tally_key(vote_id))  # type: ignore[misc]
     tallies: Dict[str, int] = {}
@@ -301,7 +301,9 @@ async def _get_tallies(redis_client: Redis, vote_id: str | None) -> Dict[str, in
     return tallies
 
 
-async def _count_active_listeners(redis_client: Redis) -> int:
+async def _count_active_listeners(redis_client: Redis | None) -> int:
+    if redis_client is None:
+        return 0
     active = await redis_client.get("pulsefm:heartbeat:active")  # type: ignore[misc]
     if not active:
         return 0
@@ -325,7 +327,7 @@ async def _count_active_listeners(redis_client: Redis) -> int:
 
 
 async def _get_tallies_cached(
-    state: StreamState, redis_client: Redis, vote_id: str | None
+    state: StreamState, redis_client: Redis | None, vote_id: str | None
 ) -> Dict[str, int]:
     if not vote_id:
         return {}
@@ -345,7 +347,9 @@ async def _get_tallies_cached(
         return tallies
 
 
-async def _get_listener_count_cached(state: StreamState, redis_client: Redis) -> int | None:
+async def _get_listener_count_cached(state: StreamState, redis_client: Redis | None) -> int | None:
+    if redis_client is None:
+        return None
     if state.listener_cache.is_fresh():
         return state.listener_cache.data
 
@@ -522,12 +526,14 @@ async def _check_marker_events(
 
 
 async def _check_timed_events(
-    state: StreamState, loop: _LoopState, db: AsyncClient, redis_client: Redis, now: float
+    state: StreamState, loop: _LoopState, db: AsyncClient, redis_client: Redis | None, now: float,
+    redis_available: bool = True,
 ) -> AsyncGenerator[str, None]:
     if now - loop.last_snapshot_at >= settings.tally_snapshot_interval_sec:
         tallies = await _get_tallies_cached(state, redis_client, loop.vote_id)
         snapshot = await _get_state_snapshot(state, db)
         payload = _build_tally_snapshot_payload(state, loop.vote_id, tallies, snapshot)
+        payload["redisAvailable"] = redis_available
         yield _format_sse("TALLY_SNAPSHOT", payload)
         loop.last_tallies = tallies
         loop.last_snapshot_at = _monotonic_now()
@@ -541,34 +547,42 @@ async def _check_timed_events(
         for option in loop.last_tallies:
             if option not in deltas:
                 deltas[option] = 0
-        payload = {"voteId": loop.vote_id, "ts": _utc_ms(), "delta": deltas, "listeners": listener_count}
+        payload = {"voteId": loop.vote_id, "ts": _utc_ms(), "delta": deltas, "listeners": listener_count, "redisAvailable": redis_available}
         yield _format_sse("TALLY_DELTA", payload)
         loop.last_tallies = tallies
         loop.last_delta_at = _monotonic_now()
 
     if now - loop.last_heartbeat_at >= settings.heartbeat_sec:
-        yield _format_sse("HEARTBEAT", {"voteId": loop.vote_id, "ts": _utc_ms()})
+        yield _format_sse("HEARTBEAT", {"voteId": loop.vote_id, "ts": _utc_ms(), "redisAvailable": redis_available})
         loop.last_heartbeat_at = _monotonic_now()
 
 
 async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
     state: StreamState = request.app.state.stream
     try:
-        redis_client = get_redis_client()
+        redis_client: Redis | None = get_redis_client()
+        redis_available = await ping_redis(redis_client)
+        if not redis_available:
+            redis_client = None
     except Exception:
-        logger.exception("Redis unavailable for stream")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
+        logger.warning("Redis unavailable for stream; running in degraded mode")
+        redis_client = None
+        redis_available = False
 
     db = get_firestore_client()
     snapshot = await _get_state_snapshot(state, db)
     poll = _extract_poll(snapshot)
     vote_id = poll.get("voteId")
 
-    yield _format_sse("HELLO", _build_hello_payload(vote_id, poll.get("version"), settings.heartbeat_sec))
+    hello_payload = _build_hello_payload(vote_id, poll.get("version"), settings.heartbeat_sec)
+    hello_payload["redisAvailable"] = redis_available
+    yield _format_sse("HELLO", hello_payload)
 
     state.mark_tally_dirty(vote_id)
     initial_tallies = await _get_tallies_cached(state, redis_client, vote_id)
-    yield _format_sse("TALLY_SNAPSHOT", _build_tally_snapshot_payload(state, vote_id, initial_tallies, snapshot))
+    initial_snapshot_payload = _build_tally_snapshot_payload(state, vote_id, initial_tallies, snapshot)
+    initial_snapshot_payload["redisAvailable"] = redis_available
+    yield _format_sse("TALLY_SNAPSHOT", initial_snapshot_payload)
 
     loop = _LoopState(
         vote_id=vote_id,
@@ -583,10 +597,22 @@ async def _event_stream(request: Request) -> AsyncGenerator[str, None]:
         if await request.is_disconnected():
             logger.info("Client disconnected from stream")
             break
+
+        if not redis_available and redis_client is not None:
+            redis_available = await ping_redis(redis_client)
+        elif redis_client is None:
+            try:
+                redis_client = get_redis_client()
+                redis_available = await ping_redis(redis_client)
+                if not redis_available:
+                    redis_client = None
+            except Exception:
+                redis_available = False
+
         now = _monotonic_now()
         async for event in _check_marker_events(state, loop, db):
             yield event
-        async for event in _check_timed_events(state, loop, db, redis_client, now):
+        async for event in _check_timed_events(state, loop, db, redis_client, now, redis_available=redis_available):
             yield event
         await asyncio.sleep(0.05)
 
@@ -611,18 +637,26 @@ async def get_state() -> Dict[str, Any]:
     db = get_firestore_client()
     snapshot = await _get_state_snapshot(s, db)
     vote_id = snapshot.get("poll", {}).get("voteId")
-    try:
-        redis_client = get_redis_client()
-    except Exception:
-        logger.exception("Redis unavailable for state")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Redis unavailable")
 
+    redis_available = True
     try:
-        tallies = await _get_tallies_cached(s, redis_client, vote_id)
+        redis_client: Redis | None = get_redis_client()
+        redis_available = await ping_redis(redis_client)
+        if not redis_available:
+            redis_client = None
     except Exception:
-        logger.exception("Redis read failed for state", extra={"voteId": vote_id})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to read tallies")
-    listeners = await _get_listener_count_cached(s, redis_client)
+        logger.warning("Redis unavailable for state; returning degraded response")
+        redis_client = None
+        redis_available = False
+
+    tallies: Dict[str, int] = {}
+    listeners: int | None = None
+    if redis_client is not None:
+        try:
+            tallies = await _get_tallies_cached(s, redis_client, vote_id)
+        except Exception:
+            logger.warning("Redis read failed for tallies", extra={"voteId": vote_id})
+        listeners = await _get_listener_count_cached(s, redis_client)
 
     poll = _extract_poll(snapshot)
     snapshot["poll"] = poll
@@ -630,6 +664,7 @@ async def get_state() -> Dict[str, Any]:
     if poll.get("winnerOption") is None:
         poll["winnerOption"] = s.winner_for_vote(vote_id)
     snapshot["listeners"] = listeners
+    snapshot["redisAvailable"] = redis_available
     return snapshot
 
 
@@ -701,5 +736,10 @@ async def stream_votes(request: Request):
 
 
 @app.get("/health")
-def health() -> Dict[str, str]:
-    return {"status": "healthy"}
+async def health() -> Dict[str, Any]:
+    redis_ok = False
+    try:
+        redis_ok = await ping_redis(get_redis_client())
+    except Exception:
+        pass
+    return {"status": "healthy", "redis": redis_ok}
