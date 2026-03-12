@@ -53,9 +53,13 @@ def _parse_end_at_ms(value: Any) -> int:
 
 
 async def _has_active_listeners() -> bool:
-    client = get_redis_client()
-    active = await client.get(settings.heartbeat_active_key)  # type: ignore[misc]
-    return bool(active)
+    try:
+        client = get_redis_client()
+        active = await client.get(settings.heartbeat_active_key)  # type: ignore[misc]
+        return bool(active)
+    except Exception:
+        logger.warning("Redis unavailable for listener check; assuming no active listeners")
+        return False
 
 
 def _get_descriptor(winner_option: str) -> Dict[str, str]:
@@ -108,30 +112,44 @@ async def _set_min_instances_zero_with_retry(vote_id: str) -> None:
 
 
 async def _is_close_done(vote_id: str) -> bool:
-    client = get_redis_client()
-    return bool(await client.get(_close_done_key(vote_id)))  # type: ignore[misc]
+    try:
+        client = get_redis_client()
+        return bool(await client.get(_close_done_key(vote_id)))  # type: ignore[misc]
+    except Exception:
+        logger.warning("Redis unavailable for close-done check", extra={"voteId": vote_id})
+        return False
 
 
 async def _mark_close_done(vote_id: str) -> None:
-    client = get_redis_client()
-    await client.set(_close_done_key(vote_id), "1", ex=max(1, settings.close_done_ttl_seconds))  # type: ignore[misc]
+    try:
+        client = get_redis_client()
+        await client.set(_close_done_key(vote_id), "1", ex=max(1, settings.close_done_ttl_seconds))  # type: ignore[misc]
+    except Exception:
+        logger.warning("Redis unavailable for marking close done", extra={"voteId": vote_id})
 
 
 async def _acquire_close_lock(vote_id: str) -> bool:
-    client = get_redis_client()
-    return bool(
-        await client.set(  # type: ignore[misc]
-            _close_lock_key(vote_id),
-            "1",
-            ex=max(1, settings.close_lock_ttl_seconds),
-            nx=True,
+    try:
+        client = get_redis_client()
+        return bool(
+            await client.set(  # type: ignore[misc]
+                _close_lock_key(vote_id),
+                "1",
+                ex=max(1, settings.close_lock_ttl_seconds),
+                nx=True,
+            )
         )
-    )
+    except Exception:
+        logger.warning("Redis unavailable for close lock acquisition", extra={"voteId": vote_id})
+        return False
 
 
 async def _release_close_lock(vote_id: str) -> None:
-    client = get_redis_client()
-    await client.delete(_close_lock_key(vote_id))  # type: ignore[misc]
+    try:
+        client = get_redis_client()
+        await client.delete(_close_lock_key(vote_id))  # type: ignore[misc]
+    except Exception:
+        logger.warning("Redis unavailable for close lock release; TTL will expire", extra={"voteId": vote_id})
 
 
 def _enqueue_warmup(vote_id: str, end_at_ms: int) -> None:

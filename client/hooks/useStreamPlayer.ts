@@ -92,6 +92,7 @@ export function useStreamPlayer() {
   const [voteError, setVoteError] = useState<string | null>(null);
   const [volume, setVolume] = useState(1);
   const [sessionReady, setSessionReady] = useState(false);
+  const [redisAvailable, setRedisAvailable] = useState(true);
   const [activeListeners, setActiveListeners] = useState<number | null>(null);
   const audioElementsConnected = useRef(false);
   const sourceReady = useRef(false);
@@ -131,6 +132,9 @@ export function useStreamPlayer() {
     snapshotRef.current = nextSnapshot;
     pollVersionRef.current = nextSnapshot.poll.version;
     setActiveListeners(typeof nextSnapshot.listeners === "number" ? nextSnapshot.listeners : null);
+    if (typeof nextSnapshot.redisAvailable === "boolean") {
+      setRedisAvailable(nextSnapshot.redisAvailable);
+    }
 
     // Restore vote state from the session cookie so all tabs stay in sync
     const voteStatus = await fetchVoteStatus(nextSnapshot.poll.voteId);
@@ -271,6 +275,9 @@ export function useStreamPlayer() {
       try {
         const data = JSON.parse(event.data) as HelloEvent;
         pollVersionRef.current = data.version;
+        if (typeof data.redisAvailable === "boolean") {
+          setRedisAvailable(data.redisAvailable);
+        }
       } catch {
         setStreamError("Invalid HELLO event payload");
       }
@@ -279,6 +286,9 @@ export function useStreamPlayer() {
     es.addEventListener("TALLY_SNAPSHOT", (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data) as TallySnapshotEvent;
+        if (typeof data.redisAvailable === "boolean") {
+          setRedisAvailable(data.redisAvailable);
+        }
         setSnapshot((prev) => {
           if (!prev || prev.poll.voteId !== data.voteId) {
             return prev;
@@ -303,6 +313,9 @@ export function useStreamPlayer() {
     es.addEventListener("TALLY_DELTA", (event: MessageEvent<string>) => {
       try {
         const data = JSON.parse(event.data) as TallyDeltaEvent;
+        if (typeof data.redisAvailable === "boolean") {
+          setRedisAvailable(data.redisAvailable);
+        }
         if (typeof data.listeners === "number") {
           setActiveListeners(data.listeners);
         } else if (data.listeners === null) {
@@ -409,6 +422,17 @@ export function useStreamPlayer() {
       }
     });
 
+    es.addEventListener("HEARTBEAT", (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as { redisAvailable?: boolean };
+        if (typeof data.redisAvailable === "boolean") {
+          setRedisAvailable(data.redisAvailable);
+        }
+      } catch {
+        // heartbeat parse failure is non-fatal
+      }
+    });
+
     es.onerror = () => {
       es.close();
       streamRef.current = null;
@@ -493,6 +517,10 @@ export function useStreamPlayer() {
     const voteId = snapshotRef.current?.poll.voteId;
     const voteStatus = snapshotRef.current?.poll.status;
     if (!voteId || isSubmittingVote) return;
+    if (!redisAvailable) {
+      setVoteError("Voting temporarily unavailable");
+      return;
+    }
     if (voteStatus !== "OPEN") {
       setVoteError("Voting is closed");
       return;
@@ -523,7 +551,7 @@ export function useStreamPlayer() {
     } finally {
       setIsSubmittingVote(false);
     }
-  }, [isSubmittingVote]);
+  }, [isSubmittingVote, redisAvailable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -707,5 +735,6 @@ export function useStreamPlayer() {
     volume,
     setVolume,
     sourceReady: sourceReady.current,
+    redisAvailable,
   };
 }

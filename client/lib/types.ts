@@ -28,6 +28,7 @@ export interface PlaybackStateSnapshot {
   poll: PollState;
   listeners?: number | null;
   ts?: number;
+  redisAvailable?: boolean;
 }
 
 export interface HelloEvent {
@@ -35,6 +36,7 @@ export interface HelloEvent {
   ts: number;
   version: number | null;
   heartbeatSec: number;
+  redisAvailable?: boolean;
 }
 
 export interface TallySnapshotEvent {
@@ -43,6 +45,7 @@ export interface TallySnapshotEvent {
   tallies: PollTallies;
   status?: "OPEN" | "CLOSED" | null;
   winnerOption?: string | null;
+  redisAvailable?: boolean;
 }
 
 export interface TallyDeltaEvent {
@@ -50,6 +53,7 @@ export interface TallyDeltaEvent {
   ts: number;
   delta: PollTallies;
   listeners?: number | null;
+  redisAvailable?: boolean;
 }
 
 export interface SongChangedEvent {

@@ -11,7 +11,13 @@ def get_redis_client() -> redis.Redis:
     port = int(os.getenv("REDIS_PORT", "6379"))
     if not host:
         raise ValueError("REDIS_HOST is required")
-    return redis.Redis(host=host, port=port, decode_responses=True)
+    return redis.Redis(
+        host=host,
+        port=port,
+        decode_responses=True,
+        socket_timeout=5,
+        socket_connect_timeout=5,
+    )
 
 
 def playback_current_key() -> str:
@@ -175,6 +181,13 @@ if added == 1 then
 end
 return 0
 """
+
+
+async def ping_redis(client: redis.Redis) -> bool:
+    try:
+        return bool(await client.ping())
+    except Exception:
+        return False
 
 
 async def record_vote_atomic(client: redis.Redis, vote_id: str, session_id: str, option: str) -> bool:

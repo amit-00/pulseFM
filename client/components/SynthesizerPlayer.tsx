@@ -40,6 +40,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
     streamError,
     volume,
     setVolume,
+    redisAvailable,
   } = useStreamPlayer();
   const isWinnerLoading = isExpired && !voteData.winnerOption;
 
@@ -207,6 +208,7 @@ export function SynthesizerPlayer({ className }: SynthesizerPlayerProps) {
                     error={voteError || streamError}
                     onSubmitVote={submitVote}
                     isWinnerLoading={isWinnerLoading}
+                    redisAvailable={redisAvailable}
                   />
                 </div>
               </>
