@@ -30,10 +30,10 @@ resource "google_project_iam_member" "modal_dispatch_service_tasks" {
   member  = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
 }
 
-resource "google_project_iam_member" "next_song_updater_tasks" {
+resource "google_project_iam_member" "encoder_tasks" {
   project = var.project_id
   role    = "roles/cloudtasks.enqueuer"
-  member  = "serviceAccount:${google_service_account.next_song_updater.email}"
+  member  = "serviceAccount:${google_service_account.encoder.email}"
 }
 
 resource "google_project_iam_member" "playback_stream_firestore" {
@@ -204,12 +204,6 @@ resource "google_service_account_iam_member" "terraform_act_as_heartbeat_receive
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
 
-resource "google_service_account_iam_member" "terraform_act_as_next_song_updater" {
-  service_account_id = google_service_account.next_song_updater.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.terraform.email}"
-}
-
 resource "google_service_account_iam_member" "terraform_act_as_encoder" {
   service_account_id = google_service_account.encoder.name
   role               = "roles/iam.serviceAccountUser"
@@ -296,10 +290,10 @@ resource "google_service_account_iam_member" "playback_service_act_as_self" {
   member             = "serviceAccount:${google_service_account.playback_service.email}"
 }
 
-resource "google_service_account_iam_member" "next_song_updater_act_as_playback_service" {
+resource "google_service_account_iam_member" "encoder_act_as_playback_service" {
   service_account_id = google_service_account.playback_service.name
   role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.next_song_updater.email}"
+  member             = "serviceAccount:${google_service_account.encoder.email}"
 }
 
 resource "google_service_account_iam_member" "modal_dispatch_service_act_as_self" {

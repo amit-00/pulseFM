@@ -124,7 +124,7 @@ modal-dispatch-service (Cloud Run)
 - CloudEvent HTTP handler (`POST /`) for GCS object finalized.
 - Filters `raw/*.wav`, ignores files >100 MB.
 - Uses `pydub` + `ffmpeg` to encode AAC `.m4a` at `128k` / `48k`.
-- Writes encoded object metadata cache-control and creates `songs/{voteId}` with `durationMs`, `status=ready`, `createdAt=SERVER_TIMESTAMP`.
+- Writes encoded object metadata cache-control, creates `songs/{voteId}` with `durationMs`, `status=ready`, `createdAt=SERVER_TIMESTAMP`, then enqueues `/next/refresh` on `playback-queue`.
 
 ### Modal Dispatch Service (`services/modal-dispatch-service`)
 
@@ -144,11 +144,6 @@ modal-dispatch-service (Cloud Run)
 - `heartbeat-receiver` (Pub/Sub trigger): atomically refresh:
   - `pulsefm:heartbeat:active`
   - `pulsefm:heartbeat:session:{sessionId}` (TTL 30s)
-
-### Next Song Updater (`functions/next-song-updater`)
-
-- Triggered on encoded object finalize events.
-- Enqueues `/next/refresh` task (idempotent task id per voteId) on `playback-queue`.
 
 ## Tech Stack
 
@@ -236,7 +231,7 @@ npm install
 - `vote-api`: `PROJECT_ID`, `LOCATION`, `VOTE_QUEUE_NAME`, `TALLY_FUNCTION_URL`, `REDIS_HOST`, `REDIS_PORT`
 - `playback-service`: `PROJECT_ID`, `LOCATION`, `PLAYBACK_TICK_URL`, `PLAYBACK_QUEUE_NAME`, topic names, Firestore collection names, Redis host/port
 - `playback-stream`: `REDIS_HOST`, `REDIS_PORT`, stream interval vars
-- `encoder`: bucket/prefix vars, Redis host/port
+- `encoder`: `PROJECT_ID`, `LOCATION`, bucket/prefix vars, `PLAYBACK_QUEUE_NAME`, `PLAYBACK_SERVICE_URL`, `TASKS_OIDC_SERVICE_ACCOUNT`
 - `modal-dispatch-service`: modal token vars, queue URL/name, Redis host/port
 
 ### Run locally
@@ -318,7 +313,6 @@ curl -X POST "$VOTE_API_URL/vote" \
 - `tally-function` (HTTP)
 - `heartbeat-ingress` (HTTP)
 - `heartbeat-receiver` (Pub/Sub event)
-- `next-song-updater` (GCS finalized event)
 
 ## Deployment
 

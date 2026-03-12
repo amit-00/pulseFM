@@ -1,6 +1,6 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`

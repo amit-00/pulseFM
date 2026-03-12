@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from pydub import AudioSegment
 from google.cloud.storage import Client as StorageClient
 from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
+from pulsefm_tasks.client import enqueue_json_task
 
 from pulsefm_encoder.config import settings
 
@@ -23,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 MAX_BYTES = 100 * 1024 * 1024
 EVENT_TYPE_FINALIZED = "google.cloud.storage.object.v1.finalized"
+
+
+class EncodedSong(BaseModel):
+    vote_id: str
+    duration_ms: int
 
 
 class GcsObject(BaseModel):
@@ -145,14 +151,40 @@ def _encode_audio_sync(storage: StorageClient, gcs_object: GcsObject) -> tuple[s
     return (vote_id, duration_ms)
 
 
-async def _persist_metadata(db: AsyncClient, vote_id: str, duration_ms: int) -> None:
-    song_ref = db.collection(settings.songs_collection).document(vote_id)
+def _playback_refresh_url() -> str:
+    if not settings.playback_service_url:
+        raise RuntimeError("PLAYBACK_SERVICE_URL is required")
+    return settings.playback_service_url.rstrip("/") + "/next/refresh"
+
+
+def _build_refresh_next_task_id(vote_id: str) -> str:
+    return f"next-song-refresh-{vote_id}"
+
+
+async def _persist_song_metadata(db: AsyncClient, encoded_song: EncodedSong) -> None:
+    song_ref = db.collection(settings.songs_collection).document(encoded_song.vote_id)
     await song_ref.set({
-        "durationMs": duration_ms,
+        "durationMs": encoded_song.duration_ms,
         "status": "ready",
         "createdAt": SERVER_TIMESTAMP,
     })
-    logger.info("Updated songs/%s with durationMs=%s", vote_id, duration_ms)
+    logger.info("Updated songs/%s with durationMs=%s", encoded_song.vote_id, encoded_song.duration_ms)
+
+
+def _enqueue_refresh_next_task(vote_id: str) -> None:
+    enqueue_json_task(
+        settings.playback_queue_name,
+        _playback_refresh_url(),
+        {"voteId": vote_id},
+        task_id=_build_refresh_next_task_id(vote_id),
+        ignore_already_exists=True,
+    )
+    logger.info("Enqueued refresh-next task", extra={"voteId": vote_id})
+
+
+async def _mark_song_ready_and_enqueue_refresh(db: AsyncClient, encoded_song: EncodedSong) -> None:
+    await _persist_song_metadata(db, encoded_song)
+    await asyncio.to_thread(_enqueue_refresh_next_task, encoded_song.vote_id)
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +219,9 @@ async def handle_event(request: Request) -> Dict[str, str]:
         )
 
     vote_id, duration_ms = await asyncio.to_thread(_encode_audio_sync, _storage, gcs_object)
-    if duration_ms < 0:
+    encoded_song = EncodedSong(vote_id=vote_id, duration_ms=duration_ms)
+    if encoded_song.duration_ms < 0:
         return {"status": "skipped"}
 
-    await _persist_metadata(_db, vote_id, duration_ms)
+    await _mark_song_ready_and_enqueue_refresh(_db, encoded_song)
     return {"status": "ok"}

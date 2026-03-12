@@ -19,6 +19,8 @@ class Settings:
     encoded_prefix: str = _normalize_prefix(os.getenv("ENCODED_PREFIX", "encoded/"))
     encoded_cache_control: str = os.getenv("ENCODED_CACHE_CONTROL", "public,max-age=300,s-maxage=3600")
     songs_collection: str = os.getenv("SONGS_COLLECTION", "songs")
+    playback_queue_name: str = os.getenv("PLAYBACK_QUEUE_NAME", "playback-queue")
+    playback_service_url: str = os.getenv("PLAYBACK_SERVICE_URL", "")
 
 
 settings = Settings()
