@@ -1,0 +1,17 @@
+{
+  "name": "pulsefm-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "deploy": "wrangler deploy --config wrangler.jsonc",
+    "deploy:preview": "wrangler deploy --config wrangler.preview.jsonc --env preview",
+    "migrate": "wrangler d1 migrations apply pulsefm --remote --config wrangler.jsonc"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260303.0",
+    "typescript": "^5.8.2",
+    "wrangler": "^4.8.0"
+  }
+}

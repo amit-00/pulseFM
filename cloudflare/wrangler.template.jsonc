@@ -1,0 +1,107 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pulsefm-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-20",
+  "placement": {
+    "mode": "smart"
+  },
+  "vars": {
+    "APP_ORIGIN": "__APP_ORIGIN__",
+    "PUBLIC_AUDIO_BASE_URL": "__PUBLIC_AUDIO_BASE_URL__",
+    "PUBLIC_API_BASE_URL": "__PUBLIC_API_BASE_URL__",
+    "EXTERNAL_GENERATOR_URL": "__EXTERNAL_GENERATOR_URL__",
+    "SESSION_TOKEN_SECRET": "__SESSION_TOKEN_SECRET__",
+    "INTERNAL_CALLBACK_SECRET": "__INTERNAL_CALLBACK_SECRET__",
+    "DESCRIPTOR_WINDOW_SIZE": "4",
+    "POLL_WINDOW_SEC": "300",
+    "PRESENCE_TTL_SEC": "30",
+    "GENERATION_TIMEOUT_SEC": "900"
+  },
+  "routes": [
+    {
+      "pattern": "__API_ROUTE__",
+      "zone_name": "__ZONE_NAME__"
+    },
+    {
+      "pattern": "__INTERNAL_ROUTE__",
+      "zone_name": "__ZONE_NAME__"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pulsefm",
+      "database_id": "__D1_DATABASE_ID__",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "AUDIO_BUCKET",
+      "bucket_name": "__R2_BUCKET_NAME__"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STATION_CONTROL",
+        "class_name": "StationControl"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "binding": "GENERATE_SONG_WORKFLOW",
+      "name": "pulsefm-generate-song",
+      "class_name": "GenerateSongWorkflow"
+    }
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StationControl"]
+    }
+  ],
+  "env": {
+    "preview": {
+      "name": "pulsefm-api-preview",
+      "vars": {
+        "APP_ORIGIN": "__PREVIEW_APP_ORIGIN__",
+        "PUBLIC_AUDIO_BASE_URL": "__PREVIEW_AUDIO_BASE_URL__",
+        "PUBLIC_API_BASE_URL": "__PREVIEW_API_BASE_URL__",
+        "EXTERNAL_GENERATOR_URL": "__EXTERNAL_GENERATOR_URL__",
+        "SESSION_TOKEN_SECRET": "__SESSION_TOKEN_SECRET__",
+        "INTERNAL_CALLBACK_SECRET": "__INTERNAL_CALLBACK_SECRET__",
+        "DESCRIPTOR_WINDOW_SIZE": "4",
+        "POLL_WINDOW_SEC": "300",
+        "PRESENCE_TTL_SEC": "30",
+        "GENERATION_TIMEOUT_SEC": "900"
+      },
+      "routes": [
+        {
+          "pattern": "__PREVIEW_API_ROUTE__",
+          "zone_name": "__ZONE_NAME__"
+        },
+        {
+          "pattern": "__PREVIEW_INTERNAL_ROUTE__",
+          "zone_name": "__ZONE_NAME__"
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pulsefm-preview",
+          "database_id": "__PREVIEW_D1_DATABASE_ID__",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "AUDIO_BUCKET",
+          "bucket_name": "__PREVIEW_R2_BUCKET_NAME__"
+        }
+      ]
+    }
+  }
+}
