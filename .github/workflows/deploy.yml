@@ -1,0 +1,76 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CF_APP_ORIGIN: ${{ secrets.CF_APP_ORIGIN }}
+      CF_PUBLIC_AUDIO_BASE_URL: ${{ secrets.CF_PUBLIC_AUDIO_BASE_URL }}
+      CF_PUBLIC_API_BASE_URL: ${{ secrets.CF_PUBLIC_API_BASE_URL }}
+      CF_EXTERNAL_GENERATOR_URL: ${{ secrets.CF_EXTERNAL_GENERATOR_URL }}
+      CF_SESSION_TOKEN_SECRET: ${{ secrets.CF_SESSION_TOKEN_SECRET }}
+      CF_INTERNAL_CALLBACK_SECRET: ${{ secrets.CF_INTERNAL_CALLBACK_SECRET }}
+      CF_ZONE_NAME: ${{ secrets.CF_ZONE_NAME }}
+      CF_API_ROUTE: ${{ secrets.CF_API_ROUTE }}
+      CF_INTERNAL_ROUTE: ${{ secrets.CF_INTERNAL_ROUTE }}
+      CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+      CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+      CF_PREVIEW_APP_ORIGIN: ${{ secrets.CF_PREVIEW_APP_ORIGIN }}
+      CF_PREVIEW_AUDIO_BASE_URL: ${{ secrets.CF_PREVIEW_AUDIO_BASE_URL }}
+      CF_PREVIEW_API_BASE_URL: ${{ secrets.CF_PREVIEW_API_BASE_URL }}
+      CF_PREVIEW_API_ROUTE: ${{ secrets.CF_PREVIEW_API_ROUTE }}
+      CF_PREVIEW_INTERNAL_ROUTE: ${{ secrets.CF_PREVIEW_INTERNAL_ROUTE }}
+      CF_PREVIEW_D1_DATABASE_ID: ${{ secrets.CF_PREVIEW_D1_DATABASE_ID }}
+      CF_PREVIEW_R2_BUCKET_NAME: ${{ secrets.CF_PREVIEW_R2_BUCKET_NAME }}
+      CF_PAGES_PROJECT_NAME: ${{ secrets.CF_PAGES_PROJECT_NAME }}
+      NEXT_PUBLIC_API_BASE_URL: /api
+      NEXT_PUBLIC_AUDIO_BASE_URL: ${{ secrets.CF_PUBLIC_AUDIO_BASE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.CF_APP_ORIGIN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: cloudflare/package.json
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.4
+
+      - name: Install client dependencies
+        working-directory: client
+        run: bun install --frozen-lockfile
+
+      - name: Build client
+        working-directory: client
+        run: bun run build
+
+      - name: Install Cloudflare runtime dependencies
+        working-directory: cloudflare
+        run: npm install
+
+      - name: Render Wrangler config
+        working-directory: cloudflare
+        run: node scripts/render-config.mjs wrangler.jsonc
+
+      - name: Apply D1 migrations
+        working-directory: cloudflare
+        run: npx wrangler d1 migrations apply pulsefm --remote --config wrangler.jsonc
+
+      - name: Deploy Worker API
+        working-directory: cloudflare
+        run: npx wrangler deploy --config wrangler.jsonc
+
+      - name: Deploy Pages site
+        run: npx wrangler pages deploy client/out --project-name "$CF_PAGES_PROJECT_NAME"

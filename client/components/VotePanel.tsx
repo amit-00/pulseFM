@@ -132,7 +132,7 @@ export function VotePanel({
 
       {!redisAvailable && (
         <div className="p-2 rounded-lg text-xs bg-amber-500/15 text-amber-300 border border-amber-500/30">
-          Voting temporarily unavailable &mdash; waiting for system recovery
+          Voting temporarily unavailable &mdash; waiting for the station control plane
         </div>
       )}
 

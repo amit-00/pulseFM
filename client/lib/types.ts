@@ -5,11 +5,13 @@ export interface SongState {
   startAt: number | null;
   endAt: number | null;
   durationMs: number | null;
+  audioUrl?: string | null;
 }
 
 export interface NextSongState {
   voteId: string | null;
   durationMs: number | null;
+  audioUrl?: string | null;
 }
 
 export interface PollState {
@@ -29,48 +31,4 @@ export interface PlaybackStateSnapshot {
   listeners?: number | null;
   ts?: number;
   redisAvailable?: boolean;
-}
-
-export interface HelloEvent {
-  voteId: string | null;
-  ts: number;
-  version: number | null;
-  heartbeatSec: number;
-  redisAvailable?: boolean;
-}
-
-export interface TallySnapshotEvent {
-  voteId: string | null;
-  ts: number;
-  tallies: PollTallies;
-  status?: "OPEN" | "CLOSED" | null;
-  winnerOption?: string | null;
-  redisAvailable?: boolean;
-}
-
-export interface TallyDeltaEvent {
-  voteId: string | null;
-  ts: number;
-  delta: PollTallies;
-  listeners?: number | null;
-  redisAvailable?: boolean;
-}
-
-export interface SongChangedEvent {
-  voteId: string | null;
-  ts: number;
-  version: number | null;
-}
-
-export interface NextSongChangedEvent {
-  voteId: string | null;
-  durationMs: number | null;
-  version: number | null;
-  ts: number;
-}
-
-export interface VoteClosedEvent {
-  voteId: string | null;
-  winnerOption?: string | null;
-  ts: number;
 }

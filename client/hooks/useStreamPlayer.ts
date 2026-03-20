@@ -2,15 +2,8 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 
 import { useAudioSlots } from "./useAudioSlots";
 import { useAudioAnalyser } from "./useAudioAnalyser";
-import { ensureSession, fetchPlaybackState, fetchVoteStatus } from "@/lib/stream";
-import {
-  HelloEvent,
-  NextSongChangedEvent,
-  PlaybackStateSnapshot,
-  SongChangedEvent,
-  TallyDeltaEvent,
-  TallySnapshotEvent,
-} from "@/lib/types";
+import { ensureSession, fetchPlaybackState, fetchVoteStatus, submitVote as postVote } from "@/lib/stream";
+import { PlaybackStateSnapshot } from "@/lib/types";
 
 type Slot = "first" | "second";
 
@@ -62,21 +55,8 @@ function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["curren
   return clampedMs / 1000;
 }
 
-function getAudioUrl(voteId: string): string {
-  const cdnBaseUrl = process.env.NEXT_PUBLIC_CDN_BASE_URL || "";
-  const bucketBaseUrl =
-    process.env.NEXT_PUBLIC_BUCKET_BASE_URL || "https://storage.googleapis.com/pulsefm-generated-songs";
-  const baseUrl = cdnBaseUrl || bucketBaseUrl;
-  const normalized = baseUrl.replace(/\/$/, "");
-  return `${normalized}/encoded/${voteId}.m4a`;
-}
-
 const SONG_CHANGE_RETRY_ATTEMPTS = 2;
-const RECONNECT_BASE_DELAY_MS = 1000;
-const RECONNECT_MAX_DELAY_MS = 30000;
-const RECONNECT_JITTER_MS = 250;
-const HEARTBEAT_INTERVAL_MS = 15000;
-const HEARTBEAT_JITTER_MS = 2000;
+const POLL_INTERVAL_MS = 3000;
 
 export function useStreamPlayer() {
   const [isInitialStateLoading, setIsInitialStateLoading] = useState(true);
@@ -96,17 +76,12 @@ export function useStreamPlayer() {
   const [activeListeners, setActiveListeners] = useState<number | null>(null);
   const audioElementsConnected = useRef(false);
   const sourceReady = useRef(false);
-  const streamRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const reconnectAttemptRef = useRef(0);
   const snapshotRef = useRef<PlaybackStateSnapshot | null>(null);
-  const pollVersionRef = useRef<number | null>(null);
-  const playbackVersionRef = useRef<number>(0);
   const isPlayingRef = useRef(false);
   const activeSlotRef = useRef<Slot>("first");
   const volumeRef = useRef(1);
-  const queuedSongChangedRef = useRef<SongChangedEvent | null>(null);
-  const songChangedInFlightRef = useRef(false);
+  const pollingRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef<Promise<PlaybackStateSnapshot> | null>(null);
 
   const {
     firstSlotAudioRef,
@@ -126,22 +101,18 @@ export function useStreamPlayer() {
     initializeAudioContext,
   } = useAudioAnalyser();
 
-  const refreshState = useCallback(async () => {
-    const nextSnapshot = await fetchPlaybackState();
-    setSnapshot(nextSnapshot);
-    snapshotRef.current = nextSnapshot;
-    pollVersionRef.current = nextSnapshot.poll.version;
-    setActiveListeners(typeof nextSnapshot.listeners === "number" ? nextSnapshot.listeners : null);
-    if (typeof nextSnapshot.redisAvailable === "boolean") {
-      setRedisAvailable(nextSnapshot.redisAvailable);
+  const getAudioUrl = useCallback((song: PlaybackStateSnapshot["currentSong"] | PlaybackStateSnapshot["nextSong"]) => {
+    if (song.audioUrl) {
+      return song.audioUrl;
     }
-
-    // Restore vote state from the session cookie so all tabs stay in sync
-    const voteStatus = await fetchVoteStatus(nextSnapshot.poll.voteId);
-    setHasVoted(voteStatus.hasVoted);
-    setSelectedOption(voteStatus.selectedOption);
-
-    return nextSnapshot;
+    if (!song.voteId) {
+      return null;
+    }
+    const baseUrl = process.env.NEXT_PUBLIC_AUDIO_BASE_URL || "";
+    if (!baseUrl) {
+      return null;
+    }
+    return `${baseUrl.replace(/\/$/, "")}/encoded/${song.voteId}.m4a`;
   }, []);
 
   const connectAudioElements = useCallback(() => {
@@ -162,12 +133,12 @@ export function useStreamPlayer() {
         return;
       }
 
-      const currentVoteId = nextSnapshot.currentSong.voteId;
-      if (!currentVoteId) {
+      const currentSource = getAudioUrl(nextSnapshot.currentSong);
+      if (!currentSource) {
         return;
       }
 
-      const nextVoteId = nextSnapshot.nextSong.voteId;
+      const nextSource = getAudioUrl(nextSnapshot.nextSong);
 
       const activeSlotValue = activeSlotRef.current;
       const inactiveSlot = getInactiveSlot(activeSlotValue);
@@ -176,7 +147,7 @@ export function useStreamPlayer() {
       const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
 
       if (newActiveRef.current) {
-        newActiveRef.current.src = getAudioUrl(currentVoteId);
+        newActiveRef.current.src = currentSource;
         newActiveRef.current.currentTime = startOffsetSec;
         newActiveRef.current.volume = volumeRef.current;
         await newActiveRef.current.play();
@@ -186,8 +157,8 @@ export function useStreamPlayer() {
         oldActiveRef.current.pause();
       }
 
-      if (nextVoteId) {
-        loadTrackToSlot(activeSlotValue, getAudioUrl(nextVoteId));
+      if (nextSource) {
+        loadTrackToSlot(activeSlotValue, nextSource);
       } else {
         const inactiveRef = getInactiveAudioRef(inactiveSlot);
         if (inactiveRef.current) {
@@ -200,6 +171,7 @@ export function useStreamPlayer() {
       startAnalysing();
     },
     [
+      getAudioUrl,
       getActiveAudioRef,
       getInactiveAudioRef,
       getInactiveSlot,
@@ -208,252 +180,61 @@ export function useStreamPlayer() {
     ],
   );
 
-  const processSongChangedEvent = useCallback(
-    async (data: SongChangedEvent) => {
-      if (typeof data.version === "number" && data.version <= playbackVersionRef.current) {
-        return;
-      }
+  const syncVoteState = useCallback((voteId: string | null) => {
+    const voteStatus = fetchVoteStatus(voteId);
+    setHasVoted(voteStatus.hasVoted);
+    setSelectedOption(voteStatus.selectedOption);
+  }, []);
 
-      let attempt = 0;
-      while (attempt < SONG_CHANGE_RETRY_ATTEMPTS) {
-        try {
-          const nextSnapshot = await refreshState();
-          await applySongChangeover(nextSnapshot);
-          if (typeof data.version === "number") {
-            playbackVersionRef.current = Math.max(playbackVersionRef.current, data.version);
-          }
-          setStreamError(null);
-          return;
-        } catch (error) {
-          attempt += 1;
-          if (attempt >= SONG_CHANGE_RETRY_ATTEMPTS) {
-            throw error;
-          }
-        }
-      }
-    },
-    [applySongChangeover, refreshState],
-  );
-
-  const flushSongChangedQueue = useCallback(async () => {
-    if (songChangedInFlightRef.current) {
-      return;
+  const refreshState = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
     }
-    songChangedInFlightRef.current = true;
 
-    try {
-      while (queuedSongChangedRef.current) {
-        const event = queuedSongChangedRef.current;
-        queuedSongChangedRef.current = null;
-        await processSongChangedEvent(event);
-      }
-    } catch {
-      setStreamError("Failed to apply song changeover");
-    } finally {
-      songChangedInFlightRef.current = false;
-      if (queuedSongChangedRef.current) {
-        void flushSongChangedQueue();
-      }
-    }
-  }, [processSongChangedEvent]);
+    const refreshPromise = (async () => {
+      const previous = snapshotRef.current;
+      const nextSnapshot = await fetchPlaybackState();
+      setSnapshot(nextSnapshot);
+      snapshotRef.current = nextSnapshot;
+      setActiveListeners(typeof nextSnapshot.listeners === "number" ? nextSnapshot.listeners : null);
+      setRedisAvailable(true);
+      syncVoteState(nextSnapshot.poll.voteId);
 
-  const connectStream = useCallback(() => {
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    streamRef.current?.close();
-    const es = new EventSource("/api/playback/stream");
-    streamRef.current = es;
-
-    es.onopen = () => {
-      reconnectAttemptRef.current = 0;
-      setStreamError(null);
-    };
-
-    es.addEventListener("HELLO", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as HelloEvent;
-        pollVersionRef.current = data.version;
-        if (typeof data.redisAvailable === "boolean") {
-          setRedisAvailable(data.redisAvailable);
-        }
-      } catch {
-        setStreamError("Invalid HELLO event payload");
-      }
-    });
-
-    es.addEventListener("TALLY_SNAPSHOT", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as TallySnapshotEvent;
-        if (typeof data.redisAvailable === "boolean") {
-          setRedisAvailable(data.redisAvailable);
-        }
-        setSnapshot((prev) => {
-          if (!prev || prev.poll.voteId !== data.voteId) {
-            return prev;
-          }
-          const next = {
-            ...prev,
-            poll: {
-              ...prev.poll,
-              tallies: data.tallies,
-              status: data.status ?? prev.poll.status,
-              winnerOption: data.winnerOption ?? null,
-            },
-          };
-          snapshotRef.current = next;
-          return next;
-        });
-      } catch {
-        setStreamError("Invalid TALLY_SNAPSHOT payload");
-      }
-    });
-
-    es.addEventListener("TALLY_DELTA", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as TallyDeltaEvent;
-        if (typeof data.redisAvailable === "boolean") {
-          setRedisAvailable(data.redisAvailable);
-        }
-        if (typeof data.listeners === "number") {
-          setActiveListeners(data.listeners);
-        } else if (data.listeners === null) {
-          setActiveListeners(null);
-        }
-        setSnapshot((prev) => {
-          if (!prev || prev.poll.voteId !== data.voteId) {
-            return prev;
-          }
-          const nextTallies = { ...prev.poll.tallies };
-          for (const [option, delta] of Object.entries(data.delta || {})) {
-            nextTallies[option] = Math.max(0, (nextTallies[option] || 0) + Number(delta || 0));
-          }
-
-          const next = {
-            ...prev,
-            poll: { ...prev.poll, tallies: nextTallies },
-          };
-          snapshotRef.current = next;
-          return next;
-        });
-      } catch {
-        setStreamError("Invalid TALLY_DELTA payload");
-      }
-    });
-
-    es.addEventListener("SONG_CHANGED", async (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as SongChangedEvent;
-        const queuedVersion = queuedSongChangedRef.current?.version;
-        if (
-          queuedVersion !== null &&
-          queuedVersion !== undefined &&
-          data.version !== null &&
-          data.version !== undefined &&
-          data.version < queuedVersion
-        ) {
-          return;
-        }
-        queuedSongChangedRef.current = data;
-        await flushSongChangedQueue();
-      } catch {
-        setStreamError("Failed to apply song changeover");
-      }
-    });
-
-    es.addEventListener("NEXT-SONG-CHANGED", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as NextSongChangedEvent;
-        if (!data.voteId) {
-          return;
-        }
-
-        const incomingVersion = typeof data.version === "number" ? data.version : null;
-        if (incomingVersion !== null && incomingVersion < playbackVersionRef.current) {
-          return;
-        }
-
-        if (incomingVersion !== null && incomingVersion === playbackVersionRef.current) {
-          const currentNext = snapshotRef.current?.nextSong;
-          const currentVoteId = currentNext?.voteId ?? null;
-          const currentDuration = currentNext?.durationMs ?? null;
-          const incomingDuration = typeof data.durationMs === "number" ? data.durationMs : null;
-          if (currentVoteId !== data.voteId || currentDuration !== incomingDuration) {
-            void (async () => {
-              try {
-                const refreshed = await refreshState();
-                const refreshedVoteId = refreshed.nextSong.voteId;
-                if (refreshedVoteId) {
-                  const inactiveSlot = getInactiveSlot(activeSlotRef.current);
-                  loadTrackToSlot(inactiveSlot, getAudioUrl(refreshedVoteId));
-                }
-              } catch {
-                setStreamError("Failed to reconcile playback state");
-              }
-            })();
-          }
-          return;
-        }
-
-        if (incomingVersion !== null) {
-          playbackVersionRef.current = Math.max(playbackVersionRef.current, incomingVersion);
-        }
-
-        setSnapshot((prev) => {
-          if (!prev) {
-            return prev;
-          }
-          const next: PlaybackStateSnapshot = {
-            ...prev,
-            nextSong: {
-              voteId: data.voteId,
-              durationMs: typeof data.durationMs === "number" ? data.durationMs : null,
-            },
-          };
-          snapshotRef.current = next;
-          return next;
-        });
-
+      const nextSource = getAudioUrl(nextSnapshot.nextSong);
+      if (nextSource) {
         const inactiveSlot = getInactiveSlot(activeSlotRef.current);
-        loadTrackToSlot(inactiveSlot, getAudioUrl(data.voteId));
-      } catch {
-        setStreamError("Invalid NEXT-SONG-CHANGED payload");
+        loadTrackToSlot(inactiveSlot, nextSource);
       }
-    });
 
-    es.addEventListener("HEARTBEAT", (event: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(event.data) as { redisAvailable?: boolean };
-        if (typeof data.redisAvailable === "boolean") {
-          setRedisAvailable(data.redisAvailable);
-        }
-      } catch {
-        // heartbeat parse failure is non-fatal
-      }
-    });
+      const currentChanged =
+        previous?.currentSong.voteId !== nextSnapshot.currentSong.voteId ||
+        previous?.currentSong.startAt !== nextSnapshot.currentSong.startAt;
 
-    es.onerror = () => {
-      es.close();
-      streamRef.current = null;
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
-      }
-      const attempt = reconnectAttemptRef.current;
-      const baseDelay = Math.min(RECONNECT_MAX_DELAY_MS, RECONNECT_BASE_DELAY_MS * 2 ** attempt);
-      const jitter = Math.floor(Math.random() * RECONNECT_JITTER_MS);
-      const delayMs = Math.min(RECONNECT_MAX_DELAY_MS, baseDelay + jitter);
-      reconnectAttemptRef.current = Math.min(reconnectAttemptRef.current + 1, 10);
-      reconnectTimerRef.current = window.setTimeout(async () => {
-        try {
-          await refreshState();
-        } catch {
-          // keep stream reconnect loop alive even when state fetch fails
+      if (currentChanged && isPlayingRef.current) {
+        let attempt = 0;
+        while (attempt < SONG_CHANGE_RETRY_ATTEMPTS) {
+          try {
+            await applySongChangeover(nextSnapshot);
+            break;
+          } catch (error) {
+            attempt += 1;
+            if (attempt >= SONG_CHANGE_RETRY_ATTEMPTS) {
+              throw error;
+            }
+          }
         }
-        connectStream();
-      }, delayMs);
-    };
-  }, [flushSongChangedQueue, refreshState]);
+      }
+
+      return nextSnapshot;
+    })();
+
+    refreshInFlightRef.current = refreshPromise;
+    try {
+      return await refreshPromise;
+    } finally {
+      refreshInFlightRef.current = null;
+    }
+  }, [applySongChangeover, getAudioUrl, getInactiveSlot, loadTrackToSlot, syncVoteState]);
 
   const handlePlayPause = useCallback(async () => {
     const activeAudioRef = getActiveAudioRef(activeSlot);
@@ -467,8 +248,8 @@ export function useStreamPlayer() {
     }
 
     const currentSnapshot = snapshotRef.current;
-    const currentVoteId = currentSnapshot?.currentSong.voteId;
-    if (!currentSnapshot || !currentVoteId) {
+    const currentSource = currentSnapshot ? getAudioUrl(currentSnapshot.currentSong) : null;
+    if (!currentSnapshot || !currentSource) {
       setStreamError("Playback state unavailable");
       return;
     }
@@ -477,19 +258,18 @@ export function useStreamPlayer() {
       initializeAudioContext();
       connectAudioElements();
 
-      const nextVoteId = currentSnapshot.nextSong.voteId;
-
       const startTimeSeconds = computePlaybackOffsetSeconds(currentSnapshot.currentSong);
       if (activeAudioRef.current) {
-        activeAudioRef.current.src = getAudioUrl(currentVoteId);
+        activeAudioRef.current.src = currentSource;
         activeAudioRef.current.currentTime = startTimeSeconds;
         activeAudioRef.current.volume = volume;
         await activeAudioRef.current.play();
       }
 
-      if (nextVoteId) {
+      const nextSource = getAudioUrl(currentSnapshot.nextSong);
+      if (nextSource) {
         const inactiveSlot = getInactiveSlot(activeSlot);
-        loadTrackToSlot(inactiveSlot, getAudioUrl(nextVoteId));
+        loadTrackToSlot(inactiveSlot, nextSource);
       }
 
       sourceReady.current = true;
@@ -504,6 +284,7 @@ export function useStreamPlayer() {
     activeSlot,
     connectAudioElements,
     getActiveAudioRef,
+    getAudioUrl,
     getInactiveSlot,
     initializeAudioContext,
     isPlaying,
@@ -533,15 +314,8 @@ export function useStreamPlayer() {
     setSelectedOption(optionKey);
 
     try {
-      const response = await fetch("/api/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voteId, option: optionKey }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || "Vote failed");
-      }
+      await postVote(voteId, optionKey);
+      await refreshState();
     } catch (error) {
       setHasVoted(false);
       setSelectedOption(null);
@@ -551,7 +325,7 @@ export function useStreamPlayer() {
     } finally {
       setIsSubmittingVote(false);
     }
-  }, [isSubmittingVote, redisAvailable]);
+  }, [isSubmittingVote, redisAvailable, refreshState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -563,10 +337,10 @@ export function useStreamPlayer() {
         await refreshState();
         if (cancelled) return;
         setIsInitialStateLoading(false);
-        connectStream();
       } catch {
         if (!cancelled) {
           setStreamError("Failed to initialize playback");
+          setRedisAvailable(false);
           setIsInitialStateLoading(false);
         }
       }
@@ -574,55 +348,35 @@ export function useStreamPlayer() {
 
     return () => {
       cancelled = true;
-      streamRef.current?.close();
-      if (reconnectTimerRef.current !== null) {
-        window.clearTimeout(reconnectTimerRef.current);
-      }
     };
-  }, [connectStream, refreshState]);
+  }, [refreshState]);
 
   useEffect(() => {
     if (!sessionReady) {
       return;
     }
 
-    let cancelled = false;
-    let timerId: number | null = null;
-
-    const scheduleNext = () => {
-      if (cancelled) {
-        return;
-      }
-      const jitterMs = Math.floor((Math.random() * 2 - 1) * HEARTBEAT_JITTER_MS);
-      const delayMs = Math.max(1000, HEARTBEAT_INTERVAL_MS + jitterMs);
-      timerId = window.setTimeout(sendHeartbeat, delayMs);
-    };
-
-    const sendHeartbeat = async () => {
-      if (cancelled) {
-        return;
-      }
+    const runPoll = async () => {
       try {
-        await fetch("/api/heartbeat", {
-          method: "POST",
-          cache: "no-store",
-        });
+        await refreshState();
+        setStreamError(null);
       } catch {
-        // Silent retry only.
-      } finally {
-        scheduleNext();
+        setRedisAvailable(false);
+        setStreamError("Waiting for the Cloudflare control plane");
       }
     };
 
-    timerId = window.setTimeout(sendHeartbeat, 0);
+    pollingRef.current = window.setInterval(() => {
+      void runPoll();
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      cancelled = true;
-      if (timerId !== null) {
-        window.clearTimeout(timerId);
+      if (pollingRef.current !== null) {
+        window.clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
     };
-  }, [sessionReady]);
+  }, [refreshState, sessionReady]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -665,8 +419,6 @@ export function useStreamPlayer() {
   }, []);
 
   useEffect(() => {
-    // Playback continuity is stream-driven (SONG_CHANGED + snapshot refresh),
-    // so natural track endings should not force a local playback stop.
     const onMediaError = () => {
       const activeAudio = getActiveAudioRef(activeSlotRef.current).current;
       if (!activeAudio?.error) {
