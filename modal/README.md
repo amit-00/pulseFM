@@ -23,7 +23,7 @@ modal deploy pulsefm_worker/app.py
 
 Create a Modal secret named `pulsefm-modal-runtime` with:
 
-- `MODAL_WEBHOOK_TOKEN`
+- `MODAL_WEBHOOK_TOKEN` (same value as Cloudflare `EXTERNAL_GENERATOR_TOKEN`)
 - `R2_ENDPOINT_URL`
 - `R2_ACCESS_KEY_ID`
 - `R2_SECRET_ACCESS_KEY`

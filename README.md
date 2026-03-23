@@ -68,6 +68,18 @@ node scripts/render-config.mjs wrangler.jsonc
 
 Required environment variables are described in the GitHub Actions workflow and the `cloudflare/wrangler.template.jsonc` placeholders.
 
+Cloudflare Worker runtime secrets are not sourced from GitHub Actions. Provision them directly in Cloudflare for each environment:
+
+```bash
+cd cloudflare
+wrangler secret put EXTERNAL_GENERATOR_TOKEN
+wrangler secret put SESSION_TOKEN_SECRET
+wrangler secret put INTERNAL_CALLBACK_SECRET
+wrangler secret put EXTERNAL_GENERATOR_TOKEN --env preview
+wrangler secret put SESSION_TOKEN_SECRET --env preview
+wrangler secret put INTERNAL_CALLBACK_SECRET --env preview
+```
+
 ### Modal Generator
 
 ```bash
@@ -94,4 +106,10 @@ Deployment is handled by GitHub Actions:
 - `deploy.yml` renders Wrangler config, applies D1 migrations, deploys the Worker, and deploys the static Pages bundle.
 - `modal-deploy.yml` deploys the Modal app on pushes to `main` when files under `modal/` change.
 
-The deploy pipeline expects Cloudflare credentials, the generator auth token, and the Modal deploy tokens to be supplied as GitHub secrets.
+Ownership model:
+
+- GitHub Actions secrets: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`
+- Cloudflare Worker runtime secrets: `EXTERNAL_GENERATOR_TOKEN`, `SESSION_TOKEN_SECRET`, `INTERNAL_CALLBACK_SECRET`
+- Modal runtime secret `pulsefm-modal-runtime`: `MODAL_WEBHOOK_TOKEN`, `R2_*`, `PUBLIC_AUDIO_BASE_URL`, optional runtime tuning values
+
+The deploy pipeline expects GitHub to hold deploy credentials only. Worker runtime secrets are owned by Cloudflare, and Modal runtime secrets are owned by Modal.
