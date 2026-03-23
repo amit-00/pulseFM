@@ -15,8 +15,8 @@ export class GenerateSongWorkflow extends WorkflowEntrypoint<Env, GenerationWork
       const response = await fetch(`${this.env.EXTERNAL_GENERATOR_URL.replace(/\/$/, "")}/jobs`, {
         method: "POST",
         headers: {
+          Authorization: `Bearer ${this.env.EXTERNAL_GENERATOR_TOKEN}`,
           "Content-Type": "application/json",
-          "X-Callback-Secret": this.env.INTERNAL_CALLBACK_SECRET,
         },
         body: JSON.stringify({
           voteId: payload.voteId,
@@ -24,6 +24,7 @@ export class GenerateSongWorkflow extends WorkflowEntrypoint<Env, GenerationWork
           descriptor: payload.descriptor,
           winnerOption: payload.winnerOption,
           callbackUrl,
+          callbackSecret: this.env.INTERNAL_CALLBACK_SECRET,
           outputKey: `encoded/${payload.voteId}.m4a`,
         }),
       });

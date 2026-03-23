@@ -12,6 +12,7 @@ This package contains the migrated backend for PulseFM.
 
 ## Required Secrets
 
+- `EXTERNAL_GENERATOR_TOKEN`
 - `SESSION_TOKEN_SECRET`
 - `INTERNAL_CALLBACK_SECRET`
 
@@ -25,6 +26,8 @@ These values are injected when rendering `wrangler.jsonc`:
 - R2 bucket name
 - audio base URL
 - external generator URL
+
+The external generator is expected to accept `POST /jobs`, upload the final `encoded/{voteId}.m4a` object to R2, and complete the workflow by calling `POST /internal/generation/callback`.
 
 ## Deploy Steps
 
