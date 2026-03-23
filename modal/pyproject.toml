@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulsefm-modal-worker"
+version = "0.1.0"
+description = "PulseFM Modal generator integrated with the Cloudflare control plane."
+requires-python = ">=3.12"
+dependencies = [
+  "boto3>=1.35.0",
+  "fastapi>=0.115.0",
+  "modal>=1.0.0",
+  "pydantic>=2.10.0",
+  "pydub>=0.25.1",
+  "requests>=2.32.0",
+  "soundfile>=0.13.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pulsefm_worker*"]

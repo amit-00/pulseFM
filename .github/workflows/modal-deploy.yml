@@ -1,0 +1,35 @@
+name: Deploy Modal
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "modal/**"
+      - ".github/workflows/modal-deploy.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+    defaults:
+      run:
+        working-directory: modal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Modal app dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Deploy Modal app
+        run: modal deploy pulsefm_worker/app.py
