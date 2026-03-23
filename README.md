@@ -8,14 +8,14 @@ PulseFM is an AI-generated radio station with live voting and continuous playbac
 - **D1** stores the light song/poll/job catalog.
 - **R2** serves encoded audio.
 - **Workflows** coordinate external song generation callbacks.
+- **Modal** runs the ACE-Step GPU generator, encodes the final `.m4a`, uploads it to R2, and calls back into Cloudflare.
 
 ## Repository Layout
 
 ```text
 client/       Static Next.js frontend
 cloudflare/   Worker API, Durable Object, Workflow, D1 migrations
-services/     Legacy GCP/Modal services kept for reference during migration
-packages/     Shared Python packages from the previous architecture
+modal/        Modal generator service wired directly to the Cloudflare workflow
 ```
 
 ## Cloudflare Runtime
@@ -68,11 +68,30 @@ node scripts/render-config.mjs wrangler.jsonc
 
 Required environment variables are described in the GitHub Actions workflow and the `cloudflare/wrangler.template.jsonc` placeholders.
 
+### Modal Generator
+
+```bash
+cd modal
+pip install -e .
+modal deploy pulsefm_worker/app.py
+```
+
+The Modal runtime expects a secret named `pulsefm-modal-runtime` that provides:
+
+- `MODAL_WEBHOOK_TOKEN`
+- `R2_ENDPOINT_URL`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+- `PUBLIC_AUDIO_BASE_URL`
+- optional `R2_REGION` and `ENCODED_CACHE_CONTROL`
+
 ## Deployment
 
 Deployment is handled by GitHub Actions:
 
 - `ci.yml` validates the client build and Cloudflare TypeScript runtime.
 - `deploy.yml` renders Wrangler config, applies D1 migrations, deploys the Worker, and deploys the static Pages bundle.
+- `modal-deploy.yml` deploys the Modal app on pushes to `main` when files under `modal/` change.
 
-The deploy pipeline expects Cloudflare credentials and binding identifiers to be supplied as GitHub secrets.
+The deploy pipeline expects Cloudflare credentials, the generator auth token, and the Modal deploy tokens to be supplied as GitHub secrets.

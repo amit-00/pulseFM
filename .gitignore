@@ -1,20 +1,16 @@
 venv/
 *.egg-info/
-.terraform/
-*.tfstate
-*.tfstate.*
-.terraform.lock.hcl
-terraform/.tmp/
 __pycache__/
 *.pyc
 node_modules/
 .env
-*.tfvars
+.terraform/
+terraform/.tmp/
 .vercel
+*.tfvars
 
 # Cloudflare / Wrangler local state
 .wrangler/
-infra/cloudflare/.dev.vars
 cloudflare/wrangler.jsonc
 cloudflare/wrangler.preview.jsonc
 cloudflare/.dev.vars

@@ -2,74 +2,51 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONFIG_PATH="$ROOT_DIR/infra/cloudflare/wrangler.toml"
-
-run_wrangler() {
-  if command -v wrangler >/dev/null 2>&1; then
-    wrangler "$@"
-  else
-    npx --yes wrangler@4 "$@"
-  fi
-}
+TEMPLATE_PATH="$ROOT_DIR/cloudflare/wrangler.template.jsonc"
 
 required_files=(
-  "$ROOT_DIR/infra/cloudflare/wrangler.toml"
-  "$ROOT_DIR/infra/cloudflare/.dev.vars.example"
-  "$ROOT_DIR/infra/cloudflare/env/common.secrets.example"
-  "$ROOT_DIR/infra/cloudflare/env/vote-api.secrets.example"
-  "$ROOT_DIR/infra/cloudflare/env/playback-service.secrets.example"
-  "$ROOT_DIR/infra/cloudflare/env/playback-stream.secrets.example"
-  "$ROOT_DIR/infra/cloudflare/env/encoder.secrets.example"
-  "$ROOT_DIR/infra/cloudflare/env/modal-dispatch-service.secrets.example"
+  "$ROOT_DIR/cloudflare/package.json"
+  "$ROOT_DIR/cloudflare/wrangler.template.jsonc"
+  "$ROOT_DIR/cloudflare/scripts/render-config.mjs"
+  "$ROOT_DIR/cloudflare/src/index.ts"
+  "$ROOT_DIR/cloudflare/src/station-control.ts"
+  "$ROOT_DIR/cloudflare/src/workflow.ts"
 )
 
 for file in "${required_files[@]}"; do
   if [[ ! -f "$file" ]]; then
-    echo "Missing required Cloudflare boilerplate file: $file" >&2
+    echo "Missing required Cloudflare runtime file: $file" >&2
     exit 1
   fi
 done
 
-# Keep phase 1 boilerplate non-deploying and resource-free.
-forbidden_patterns=(
-  '^main\\s*='
-  '^assets\\s*='
-  '^workers_dev\\s*='
-  '^route\\s*='
-  '^routes\\s*='
-  '^\\[\\[kv_namespaces\\]\\]'
-  '^\\[\\[d1_databases\\]\\]'
-  '^\\[\\[r2_buckets\\]\\]'
-  '^\\[\\[queues.producers\\]\\]'
-  '^\\[\\[queues.consumers\\]\\]'
-  '^\\[\\[durable_objects.bindings\\]\\]'
+required_patterns=(
+  'EXTERNAL_GENERATOR_TOKEN'
+  'STATION_CONTROL'
+  'GENERATE_SONG_WORKFLOW'
+  'StationControl'
+  'GenerateSongWorkflow'
 )
 
-for pattern in "${forbidden_patterns[@]}"; do
-  if rg -n "$pattern" "$CONFIG_PATH" >/dev/null; then
-    echo "Forbidden phase 1 setting found in $CONFIG_PATH: $pattern" >&2
+for pattern in "${required_patterns[@]}"; do
+  if ! rg -n "$pattern" "$ROOT_DIR/cloudflare" >/dev/null; then
+    echo "Missing required Cloudflare runtime pattern: $pattern" >&2
     exit 1
   fi
 done
 
-python3 - "$CONFIG_PATH" <<'PY'
+python3 - "$TEMPLATE_PATH" <<'PY'
+import json
 import sys
-import tomllib
 from pathlib import Path
 
-config_path = Path(sys.argv[1])
-with config_path.open("rb") as f:
-    data = tomllib.load(f)
+template_path = Path(sys.argv[1])
+with template_path.open("r", encoding="utf-8") as f:
+    data = json.load(f)
 
-for required_key in ("name", "compatibility_date"):
+for required_key in ("name", "main", "compatibility_date", "durable_objects", "workflows"):
     if required_key not in data:
-        raise SystemExit(f"Missing required key in {config_path}: {required_key}")
+        raise SystemExit(f"Missing required key in {template_path}: {required_key}")
 PY
 
-if [[ "${SKIP_WRANGLER_VALIDATE:-0}" == "1" ]]; then
-  echo "Skipping Wrangler CLI check (SKIP_WRANGLER_VALIDATE=1)."
-else
-  run_wrangler --version >/dev/null
-fi
-
-echo "Cloudflare boilerplate validation passed."
+echo "Cloudflare runtime validation passed."

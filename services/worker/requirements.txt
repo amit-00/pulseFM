@@ -1,6 +1,0 @@
-modal
-soundfile
-huggingface-hub
-fastapi
-pydantic
-google-cloud-firestore
