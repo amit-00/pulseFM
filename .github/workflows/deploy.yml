@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "client/**"
+      - "cloudflare/**"
+      - ".github/workflows/deploy.yml"
 
 jobs:
   deploy:
