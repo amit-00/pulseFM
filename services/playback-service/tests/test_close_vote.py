@@ -53,3 +53,8 @@ async def test_close_vote_passes_winner_to_redis(monkeypatch: pytest.MonkeyPatch
     assert calls == [("v1", "CLOSED", "a")]
     assert window["winnerOption"] == "a"
     assert doc.written is not None and doc.written["status"] == "CLOSED"
+
+
+def test_playback_events_publishing_removed() -> None:
+    assert not hasattr(main, "_publish_changeover_events")
+    assert not hasattr(main, "_publish_playback_event")

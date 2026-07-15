@@ -10,7 +10,6 @@ class Settings:
     vote_state_collection: str = os.getenv("VOTE_STATE_COLLECTION", "voteState")
     playback_queue: str = os.getenv("PLAYBACK_QUEUE_NAME", "playback-queue")
     playback_tick_url: str = os.getenv("PLAYBACK_TICK_URL", "")
-    playback_events_topic: str = os.getenv("PLAYBACK_EVENTS_TOPIC", "playback")
     vote_events_topic: str = os.getenv("VOTE_EVENTS_TOPIC", "vote-events")
     window_seconds: int = int(os.getenv("WINDOW_SECONDS", "300"))
     options_per_window: int = int(os.getenv("OPTIONS_PER_WINDOW", "4"))

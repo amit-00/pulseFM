@@ -18,7 +18,6 @@ FastAPI service that performs song changeover and rotates votes in one flow.
 - `SONGS_COLLECTION` (default: `songs`)
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
 - `VOTE_EVENTS_TOPIC` (default: `vote-events`)
-- `PLAYBACK_EVENTS_TOPIC` (default: `playback`)
 - `WINDOW_SECONDS` (default: 300)
 - `OPTIONS_PER_WINDOW` (default: 4)
 - `VOTE_OPTIONS` (comma-separated)
