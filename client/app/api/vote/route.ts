@@ -22,8 +22,9 @@ export async function POST(request: Request) {
     const response = await voteApiFetch('/vote', 'POST', sessionId, body);
 
     if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string };
       return NextResponse.json(
-        { error: "Vote request failed" },
+        { error: body.detail || "Vote request failed" },
         { status: response.status }
       );
     }

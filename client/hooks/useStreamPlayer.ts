@@ -539,8 +539,12 @@ export function useStreamPlayer() {
         body: JSON.stringify({ voteId, option: optionKey }),
       });
       if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || "Vote failed");
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        if (response.status === 409 && data.error === "Duplicate vote") {
+          // The backend confirmed this session already voted — keep the selection.
+          return;
+        }
+        throw new Error(data.error || "Vote failed");
       }
     } catch (error) {
       setHasVoted(false);
