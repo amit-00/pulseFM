@@ -46,18 +46,14 @@ On side branches (`feat/playback-worker-durable-object-migration`,
   code remains in the repository; the backend stayed on GCP (Cloud Run, Cloud
   Functions, Firestore, Memorystore, Pub/Sub, Cloud Tasks).
 
-> **[AMIT: fill in — why was the migration attempted? What did Workers/D1/Durable
-> Objects promise over the Cloud Run stack (cost, latency, operational simplicity,
-> curiosity)?]**
+Durable objects seemed like a natural solution to the single source of truth for the playback engine.
 
 ## Decision
 
 The migration was abandoned; PulseFM remains on GCP. The scaffolding was removed
 from main in `62d70b2` and the prototype branches were left unmerged.
 
-> **[AMIT: fill in — why was the migration abandoned? What blocked or de-motivated
-> it (Python Workers maturity, Durable Object fit for the playback loop, D1 limits,
-> effort vs. benefit, something else)?]**
+However a migration to Cloudflare and DO's would go against why I originally wanted to build this project (Working with GCP, Dockerized applications, Redis, etc).
 
 ## Consequences
 
