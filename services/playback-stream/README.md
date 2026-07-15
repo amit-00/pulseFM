@@ -1,28 +1,20 @@
 # Playback Stream
 
-FastAPI service that streams system state and tally updates over SSE.
+FastAPI read API serving cached playback state over Redis/Firestore.
+Clients poll `GET /state` (~2s with jitter); per-instance cache skew is
+bounded by the cache TTLs (snapshot until song `endAt`, tallies ~500 ms,
+listeners ~1 s).
 
 ## Endpoints
-- `GET /state` -> current state snapshot
-- `GET /stream` -> Server-Sent Events stream (requires `X-Session-Id`)
+- `GET /state` -> current state snapshot (`currentSong`, `nextSong`, `poll`
+  incl. `tallies` + `winnerOption`, `listeners`, `redisAvailable`, `ts`)
 - `GET /health`
-
-## Event types
-- `HELLO`
-- `TALLY_SNAPSHOT` (includes `status` and optional `winnerOption`)
-- `TALLY_DELTA`
-- `SONG_CHANGED`
-- `VOTE_CLOSED`
-- `HEARTBEAT`
 
 ## Required env vars
 - `REDIS_HOST`
 - `REDIS_PORT`
 
 ## Optional env vars
-- `STREAM_INTERVAL_MS` (default: 500)
-- `TALLY_SNAPSHOT_INTERVAL_SEC` (default: 10)
-- `HEARTBEAT_SEC` (default: 15)
 - `STATIONS_COLLECTION` (default: `stations`)
 - `VOTE_STATE_COLLECTION` (default: `voteState`)
 
