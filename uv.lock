@@ -15,12 +15,12 @@ members = [
     "pulsefm-modal-dispatch-service",
     "pulsefm-models",
     "pulsefm-playback-service",
+    "pulsefm-playback-stream",
     "pulsefm-pubsub",
     "pulsefm-redis",
     "pulsefm-tally-function",
     "pulsefm-tasks",
     "pulsefm-vote-api",
-    "pulsefm-vote-stream",
     "pulsefm-worker",
 ]
 
@@ -1374,6 +1374,27 @@ requires-dist = [
 ]
 
 [[package]]
+name = "pulsefm-playback-stream"
+version = "0.1.0"
+source = { editable = "services/playback-stream" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "google-cloud-firestore" },
+    { name = "pulsefm-pubsub" },
+    { name = "pulsefm-redis" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = "==0.104.1" },
+    { name = "google-cloud-firestore" },
+    { name = "pulsefm-pubsub", editable = "packages/pulsefm-pubsub" },
+    { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
+]
+
+[[package]]
 name = "pulsefm-pubsub"
 version = "0.1.0"
 source = { editable = "packages/pulsefm-pubsub" }
@@ -1417,9 +1438,6 @@ version = "0.1.0"
 source = { editable = "services/vote-api" }
 dependencies = [
     { name = "fastapi" },
-    { name = "google-cloud-firestore" },
-    { name = "google-cloud-storage" },
-    { name = "pulsefm-auth" },
     { name = "pulsefm-redis" },
     { name = "pulsefm-tasks" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1428,30 +1446,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.104.1" },
-    { name = "google-cloud-firestore" },
-    { name = "google-cloud-storage" },
-    { name = "pulsefm-auth", editable = "packages/pulsefm-auth" },
     { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
     { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
-    { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
-]
-
-[[package]]
-name = "pulsefm-vote-stream"
-version = "0.1.0"
-source = { editable = "services/vote-stream" }
-dependencies = [
-    { name = "fastapi" },
-    { name = "pulsefm-auth" },
-    { name = "pulsefm-redis" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", specifier = "==0.104.1" },
-    { name = "pulsefm-auth", editable = "packages/pulsefm-auth" },
-    { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
 ]
 
