@@ -24,6 +24,15 @@ from pulsefm_redis.client import (
 from pulsefm_tasks.client import enqueue_json_task_with_delay
 
 from pulsefm_playback_service.config import settings
+from pulsefm_playback_service.logic import (
+    CandidateSong,
+    build_tick_task_id,
+    build_vote_close_task_id,
+    is_stale_version,
+    pick_winner,
+    plan_rotation,
+    select_candidate,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -102,17 +111,6 @@ def _validate_tick_version(payload: Dict[str, Any]) -> int:
     if version <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="version must be positive")
     return version
-
-
-def _build_tick_task_id(vote_id: str | None, ends_at: datetime | None, version: int | None = None) -> str:
-    suffix = vote_id or ""
-    timestamp = str(int(ends_at.timestamp())) if ends_at else ""
-    version_suffix = str(version) if version is not None else ""
-    return f"playback-{suffix}-{timestamp}-{version_suffix}"
-
-
-def _build_vote_close_task_id(vote_id: str, version: int) -> str:
-    return f"vote-close-{vote_id}-{version}"
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +193,7 @@ async def _ensure_playback_tick_scheduled() -> None:
             parsed_end_at = _parse_timestamp(ends_at)
         except ValueError:
             parsed_end_at = None
-    task_id = _build_tick_task_id(vote_id, parsed_end_at, next_version)
+    task_id = build_tick_task_id(vote_id, parsed_end_at, next_version)
     enqueue_json_task_with_delay(
         settings.playback_queue,
         _tick_url(),
@@ -237,14 +235,6 @@ def _get_window_options() -> list[str]:
     if len(options) < settings.options_per_window:
         raise ValueError("Not enough descriptor options to sample window choices")
     return random.sample(options, settings.options_per_window)
-
-
-def _pick_winner(tallies: Dict[str, Any]) -> str | None:
-    if not tallies:
-        return None
-    max_votes = max(tallies.values())
-    tied = [option for option, count in tallies.items() if count == max_votes]
-    return random.choice(tied) if tied else None
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +338,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
         tallies = {}
     if not tallies:
         tallies = {option: 0 for option in (state.get("options") or [])}
-    winner_option = _pick_winner(tallies)
+    winner_option = pick_winner(tallies)
 
     window_doc = {
         **state,
@@ -425,25 +415,27 @@ async def _rotate_song(db: AsyncClient, request_version: int) -> SongRotationRes
             raise ValueError("stations/main not found")
         station = station_snap.to_dict() or {}
         current_version = int(station.get("version") or 0)
-        if request_version <= current_version:
+        if is_stale_version(request_version, current_version):
             return None
 
         next_data = station.get("next") or {}
         current_vote_id = next_data.get("voteId")
-        current_duration = next_data.get("durationMs") or next_data.get("duration")
-        if current_vote_id is None or current_duration is None:
-            raise ValueError("stations/main.next is missing fields")
-
-        duration_ms = int(current_duration)
-        ends_at = now + timedelta(milliseconds=duration_ms)
 
         candidate_song = await _select_ready_song_candidate(
             transaction,
             songs_ref,
             current_vote_id=str(current_vote_id) if current_vote_id is not None else None,
         )
+        candidate: CandidateSong | None = None
+        if candidate_song is not None:
+            candidate = CandidateSong(
+                song_id=str(candidate_song["id"]),
+                duration_ms=int(candidate_song["duration"]),
+                stubbed=False,
+            )
 
-        if candidate_song is None:
+        stubbed_duration_ms: int | None = None
+        if candidate is None:
             stubbed_snap = await songs_ref.document("stubbed").get(transaction=transaction)
             if not stubbed_snap.exists:
                 raise ValueError("No ready song or stubbed song")
@@ -451,37 +443,37 @@ async def _rotate_song(db: AsyncClient, request_version: int) -> SongRotationRes
             stubbed_duration = stubbed_data.get("durationMs")
             if stubbed_duration is None:
                 raise ValueError("Stubbed song missing fields")
-            candidate_song = {"id": "stubbed", "duration": stubbed_duration, "stubbed": True}
+            stubbed_duration_ms = int(stubbed_duration)
 
-        next_duration_ms = int(candidate_song["duration"])
+        plan = plan_rotation(station, candidate, stubbed_duration_ms, request_version, now)
 
         transaction.update(station_ref, {
-            "voteId": current_vote_id,
-            "startAt": now,
-            "endAt": ends_at,
-            "durationMs": duration_ms,
-            "version": request_version,
+            "voteId": plan.vote_id,
+            "startAt": plan.start_at,
+            "endAt": plan.ends_at,
+            "durationMs": plan.duration_ms,
+            "version": plan.version,
             "next": {
-                "voteId": candidate_song["id"],
-                "duration": next_duration_ms,
-                "durationMs": next_duration_ms,
+                "voteId": plan.next_vote_id,
+                "duration": plan.next_duration_ms,
+                "durationMs": plan.next_duration_ms,
             },
         })
 
-        if current_vote_id != "stubbed":
-            transaction.update(songs_ref.document(current_vote_id), {"status": "played"})
-        if not candidate_song.get("stubbed"):
-            transaction.update(songs_ref.document(candidate_song["id"]), {"status": "queued"})
+        if plan.vote_id != "stubbed":
+            transaction.update(songs_ref.document(plan.vote_id), {"status": "played"})
+        if not plan.next_stubbed:
+            transaction.update(songs_ref.document(plan.next_vote_id), {"status": "queued"})
 
         return {
-            "start_at": now,
-            "ends_at": ends_at,
-            "duration_ms": duration_ms,
-            "vote_id": current_vote_id,
-            "next_vote_id": candidate_song["id"],
-            "next_duration_ms": next_duration_ms,
-            "next_stubbed": bool(candidate_song.get("stubbed")),
-            "version": request_version,
+            "start_at": plan.start_at,
+            "ends_at": plan.ends_at,
+            "duration_ms": plan.duration_ms,
+            "vote_id": plan.vote_id,
+            "next_vote_id": plan.next_vote_id,
+            "next_duration_ms": plan.next_duration_ms,
+            "next_stubbed": plan.next_stubbed,
+            "version": plan.version,
         }
 
     transaction = db.transaction()
@@ -511,15 +503,11 @@ async def _select_ready_song_candidate(
         .limit(10)
     )
     ready_docs = await query.get(transaction=transaction)
-    for doc in ready_docs:
-        if current_vote_id and doc.id == current_vote_id:
-            continue
-        data = doc.to_dict() or {}
-        duration_ms = data.get("durationMs")
-        if duration_ms is None:
-            continue
-        return {"id": doc.id, "duration": duration_ms, "stubbed": False}
-    return None
+    ready_songs = [(doc.id, doc.to_dict() or {}) for doc in ready_docs]
+    candidate = select_candidate(ready_songs, current_vote_id)
+    if candidate is None:
+        return None
+    return {"id": candidate.song_id, "duration": candidate.duration_ms, "stubbed": candidate.stubbed}
 
 
 async def _rotate_vote(db: AsyncClient, song_duration_ms: int) -> Dict[str, Any]:
@@ -578,7 +566,7 @@ def _schedule_next_tasks(rotation: SongRotationResult, window: Dict[str, Any], r
         _vote_close_url(),
         {"voteId": close_vote_id, "version": close_version},
         close_delay,
-        task_id=_build_vote_close_task_id(str(close_vote_id), close_version),
+        task_id=build_vote_close_task_id(str(close_vote_id), close_version),
         ignore_already_exists=True,
     )
     logger.info(
@@ -593,7 +581,7 @@ def _schedule_next_tasks(rotation: SongRotationResult, window: Dict[str, Any], r
         _tick_url(),
         {"version": next_tick_version},
         delay_seconds,
-        task_id=_build_tick_task_id(rotation.vote_id, rotation.ends_at, next_tick_version),
+        task_id=build_tick_task_id(rotation.vote_id, rotation.ends_at, next_tick_version),
         ignore_already_exists=True,
     )
     logger.info(

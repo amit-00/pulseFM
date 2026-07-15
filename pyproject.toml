@@ -8,6 +8,11 @@ exclude = [
   "functions/next-song-updater",
 ]
 
+# Applies when pytest runs from the workspace root (e.g. CI's
+# `pytest packages/ services/`); per-package configs cover local runs.
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.uv.sources]
 pulsefm-models = { workspace = true }
 pulsefm-encoder = { workspace = true }
