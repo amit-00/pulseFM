@@ -32,18 +32,6 @@ resource "google_cloud_run_v2_service" "vote_api" {
         value = tostring(google_redis_instance.memorystore.port)
       }
       env {
-        name  = "TALLY_FUNCTION_URL"
-        value = google_cloudfunctions2_function.tally_function.service_config[0].uri
-      }
-      env {
-        name  = "VOTE_QUEUE_NAME"
-        value = google_cloud_tasks_queue.tally_queue.name
-      }
-      env {
-        name  = "TASKS_OIDC_SERVICE_ACCOUNT"
-        value = google_service_account.vote_api.email
-      }
-      env {
         name  = "ENCODED_BUCKET"
         value = "pulsefm-generated-songs"
       }

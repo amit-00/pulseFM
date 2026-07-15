@@ -18,7 +18,6 @@ members = [
     "pulsefm-playback-stream",
     "pulsefm-pubsub",
     "pulsefm-redis",
-    "pulsefm-tally-function",
     "pulsefm-tasks",
     "pulsefm-vote-api",
     "pulsefm-worker",
@@ -1606,11 +1605,6 @@ dev = [
 ]
 
 [[package]]
-name = "pulsefm-tally-function"
-version = "0.1.0"
-source = { editable = "functions/tally-function" }
-
-[[package]]
 name = "pulsefm-tasks"
 version = "0.1.0"
 source = { editable = "packages/pulsefm-tasks" }
@@ -1628,16 +1622,30 @@ source = { editable = "services/vote-api" }
 dependencies = [
     { name = "fastapi" },
     { name = "pulsefm-redis" },
-    { name = "pulsefm-tasks" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "fakeredis", extra = ["lua"] },
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.104.1" },
     { name = "pulsefm-redis", editable = "packages/pulsefm-redis" },
-    { name = "pulsefm-tasks", editable = "packages/pulsefm-tasks" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.24.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "fakeredis", extras = ["lua"], specifier = ">=2.23" },
+    { name = "httpx", specifier = ">=0.27,<0.28" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
 ]
 
 [[package]]

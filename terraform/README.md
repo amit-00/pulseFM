@@ -1,6 +1,6 @@
 # Terraform (PulseFM)
 
-This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (tally-function, heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
+This directory provisions Cloud Run services (vote-api, playback-service, encoder, playback-stream, modal-dispatch-service), Cloud Functions (heartbeat-ingress, heartbeat-receiver, next-song-updater), Firestore, Cloud Tasks, Pub/Sub, GCS, Eventarc, IAM, Artifact Registry, and Memorystore (Redis).
 
 ## Prereqs
 - GCS bucket for Terraform state: `pulsefm-terraform-state`
@@ -28,7 +28,6 @@ terraform apply \
 After the trigger is created (it is disabled by default), run it manually in Cloud Build. It will apply Terraform, build/push images, and deploy Cloud Run by digest.
 
 ## Cloud Tasks queues
-- `tally-queue` for vote-api -> tally-function dispatch.
 - `playback-queue` for playback-service tick/close scheduling.
 - `modal-dispatch-queue` for modal-dispatch-service warmup scheduling.
 

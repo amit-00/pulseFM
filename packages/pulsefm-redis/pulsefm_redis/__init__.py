@@ -11,8 +11,8 @@ from .client import (
     playback_current_key,
     poll_tally_key,
     poll_voted_key,
-    record_vote_atomic,
     set_playback_current_snapshot,
+    submit_vote_atomic,
 )
 
 __all__ = [
@@ -28,6 +28,6 @@ __all__ = [
     "playback_current_key",
     "poll_tally_key",
     "poll_voted_key",
-    "record_vote_atomic",
     "set_playback_current_snapshot",
+    "submit_vote_atomic",
 ]
