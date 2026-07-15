@@ -236,10 +236,17 @@ resource "google_storage_bucket_iam_member" "vote_api_bucket_viewer" {
   member = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
-resource "google_storage_bucket_iam_member" "generated_songs_public_encoded_reader" {
+resource "google_storage_bucket_iam_member" "nextjs_server_songs_viewer" {
   bucket = google_storage_bucket.generated_songs.name
   role   = "roles/storage.objectViewer"
-  member = "allUsers"
+  member = "serviceAccount:${google_service_account.nextjs_server.email}"
+}
+
+# signBlob for V4 URL signing (the existing OpenIdTokenCreator binding does not cover it)
+resource "google_service_account_iam_member" "nextjs_server_sign_blobs" {
+  service_account_id = google_service_account.nextjs_server.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.nextjs_server.email}"
 }
 
 resource "google_service_account_iam_member" "vote_api_sign_blobs" {

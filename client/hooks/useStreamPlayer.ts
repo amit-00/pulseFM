@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 
 import { useAudioSlots } from "./useAudioSlots";
 import { useAudioAnalyser } from "./useAudioAnalyser";
+import { fetchAudioUrl } from "@/lib/audioUrl";
 import { ensureSession, fetchPlaybackState, fetchVoteStatus } from "@/lib/stream";
 import { diffSnapshots, nextPollDelayMs } from "@/lib/pollDiff";
 import { PlaybackStateSnapshot } from "@/lib/types";
@@ -54,15 +55,6 @@ function computePlaybackOffsetSeconds(currentSong: PlaybackStateSnapshot["curren
   const elapsedMs = Math.max(0, Date.now() - startAt);
   const clampedMs = Math.min(durationMs, elapsedMs);
   return clampedMs / 1000;
-}
-
-function getAudioUrl(voteId: string): string {
-  const cdnBaseUrl = process.env.NEXT_PUBLIC_CDN_BASE_URL || "";
-  const bucketBaseUrl =
-    process.env.NEXT_PUBLIC_BUCKET_BASE_URL || "https://storage.googleapis.com/pulsefm-generated-songs";
-  const baseUrl = cdnBaseUrl || bucketBaseUrl;
-  const normalized = baseUrl.replace(/\/$/, "");
-  return `${normalized}/encoded/${voteId}.m4a`;
 }
 
 const HEARTBEAT_INTERVAL_MS = 15000;
@@ -151,6 +143,9 @@ export function useStreamPlayer() {
 
       const nextVoteId = nextSnapshot.nextSong.voteId;
 
+      const currentUrl = await fetchAudioUrl(currentVoteId);
+      const nextUrl = nextVoteId ? await fetchAudioUrl(nextVoteId).catch(() => null) : null;
+
       const activeSlotValue = activeSlotRef.current;
       const inactiveSlot = getInactiveSlot(activeSlotValue);
       const newActiveRef = getActiveAudioRef(inactiveSlot);
@@ -158,7 +153,7 @@ export function useStreamPlayer() {
       const startOffsetSec = computePlaybackOffsetSeconds(nextSnapshot.currentSong);
 
       if (newActiveRef.current) {
-        newActiveRef.current.src = getAudioUrl(currentVoteId);
+        newActiveRef.current.src = currentUrl;
         newActiveRef.current.currentTime = startOffsetSec;
         newActiveRef.current.volume = volumeRef.current;
         await newActiveRef.current.play();
@@ -168,8 +163,8 @@ export function useStreamPlayer() {
         oldActiveRef.current.pause();
       }
 
-      if (nextVoteId) {
-        loadTrackToSlot(activeSlotValue, getAudioUrl(nextVoteId));
+      if (nextVoteId && nextUrl) {
+        loadTrackToSlot(activeSlotValue, nextUrl);
       } else {
         const inactiveRef = getInactiveAudioRef(inactiveSlot);
         if (inactiveRef.current) {
@@ -201,7 +196,9 @@ export function useStreamPlayer() {
           setStreamError("Failed to apply song changeover");
         }
       } else if (transitions.nextSongChanged && next.nextSong.voteId) {
-        loadTrackToSlot(getInactiveSlot(activeSlotRef.current), getAudioUrl(next.nextSong.voteId));
+        void fetchAudioUrl(next.nextSong.voteId)
+          .then((url) => loadTrackToSlot(getInactiveSlot(activeSlotRef.current), url))
+          .catch(() => {});
       }
       if (transitions.pollChanged) {
         const voteStatus = await fetchVoteStatus(next.poll.voteId);
@@ -238,7 +235,7 @@ export function useStreamPlayer() {
 
       const startTimeSeconds = computePlaybackOffsetSeconds(currentSnapshot.currentSong);
       if (activeAudioRef.current) {
-        activeAudioRef.current.src = getAudioUrl(currentVoteId);
+        activeAudioRef.current.src = await fetchAudioUrl(currentVoteId);
         activeAudioRef.current.currentTime = startTimeSeconds;
         activeAudioRef.current.volume = volume;
         await activeAudioRef.current.play();
@@ -246,7 +243,9 @@ export function useStreamPlayer() {
 
       if (nextVoteId) {
         const inactiveSlot = getInactiveSlot(activeSlot);
-        loadTrackToSlot(inactiveSlot, getAudioUrl(nextVoteId));
+        fetchAudioUrl(nextVoteId)
+          .then((url) => loadTrackToSlot(inactiveSlot, url))
+          .catch(() => {});
       }
 
       sourceReady.current = true;

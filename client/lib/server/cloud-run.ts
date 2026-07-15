@@ -67,6 +67,10 @@ function getExternalAccountClient(): BaseExternalAccountClient {
   return externalAccountClient;
 }
 
+export function getExternalAccountClientForSigning(): BaseExternalAccountClient {
+  return getExternalAccountClient();
+}
+
 async function getAuthHeadersLocal(targetAudience: string): Promise<Headers> {
   if (!localAuth) {
     localAuth = new GoogleAuth();

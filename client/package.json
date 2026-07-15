@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "@upstash/redis": "^1.35.3",
     "@vercel/analytics": "^1.6.1",
     "@vercel/oidc": "^3.0.0",
