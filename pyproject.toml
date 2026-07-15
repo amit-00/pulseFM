@@ -1,3 +1,8 @@
+# Workspace-root pytest config: runs like `uv run pytest packages/ services/`
+# resolve their configfile here, so async tests need auto mode at this level too.
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.uv.workspace]
 members = ["services/*", "packages/*", "functions/*"]
 # These functions are requirements.txt-only (no pyproject.toml); uv >= 0.9
