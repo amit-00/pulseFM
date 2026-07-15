@@ -2,10 +2,6 @@ output "vote_api_url" {
   value = google_cloud_run_v2_service.vote_api.uri
 }
 
-output "tally_function_url" {
-  value = google_cloudfunctions2_function.tally_function.service_config[0].uri
-}
-
 output "heartbeat_ingress_url" {
   value = google_cloudfunctions2_function.heartbeat_ingress.service_config[0].uri
 }
@@ -28,10 +24,6 @@ output "playback_stream_url" {
 
 output "modal_dispatch_service_url" {
   value = google_cloud_run_v2_service.modal_dispatch_service.uri
-}
-
-output "tally_queue" {
-  value = google_cloud_tasks_queue.tally_queue.name
 }
 
 output "playback_queue" {

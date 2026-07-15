@@ -6,18 +6,6 @@ resource "google_project_iam_member" "vote_api_firestore" {
   member  = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
-resource "google_project_iam_member" "tally_function_firestore" {
-  project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.tally_function.email}"
-}
-
-resource "google_project_iam_member" "tally_function_pubsub" {
-  project = var.project_id
-  role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:${google_service_account.tally_function.email}"
-}
-
 resource "google_project_iam_member" "heartbeat_ingress_pubsub" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
@@ -102,12 +90,6 @@ resource "google_project_iam_member" "modal_dispatch_service_vpc_access" {
   member  = "serviceAccount:${google_service_account.modal_dispatch_service.email}"
 }
 
-resource "google_project_iam_member" "tally_function_vpc_access" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.tally_function.email}"
-}
-
 resource "google_project_iam_member" "heartbeat_receiver_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
@@ -170,12 +152,6 @@ resource "google_project_iam_member" "terraform_secret_accessor" {
 
 resource "google_service_account_iam_member" "terraform_act_as_vote_api" {
   service_account_id = google_service_account.vote_api.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.terraform.email}"
-}
-
-resource "google_service_account_iam_member" "terraform_act_as_tally_function" {
-  service_account_id = google_service_account.tally_function.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.terraform.email}"
 }
@@ -258,12 +234,6 @@ resource "google_project_iam_member" "gcs_pubsub_publisher" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:service-${data.google_project.current.number}@gs-project-accounts.iam.gserviceaccount.com"
-}
-
-resource "google_service_account_iam_member" "vote_api_act_as_self" {
-  service_account_id = google_service_account.vote_api.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.vote_api.email}"
 }
 
 resource "google_service_account_iam_member" "nextjs_server_oidc_token_creator_self" {

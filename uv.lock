@@ -18,7 +18,6 @@ members = [
     "pulsefm-playback-stream",
     "pulsefm-pubsub",
     "pulsefm-redis",
-    "pulsefm-tally-function",
     "pulsefm-tasks",
     "pulsefm-vote-api",
     "pulsefm-worker",
@@ -1562,11 +1561,6 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
 ]
-
-[[package]]
-name = "pulsefm-tally-function"
-version = "0.1.0"
-source = { editable = "functions/tally-function" }
 
 [[package]]
 name = "pulsefm-tasks"

@@ -6,10 +6,6 @@ resource "google_pubsub_topic" "playback_events" {
   name = "playback"
 }
 
-resource "google_pubsub_topic" "tally_events" {
-  name = "tally"
-}
-
 resource "google_pubsub_topic" "heartbeat_events" {
   name = "heartbeat"
 }
