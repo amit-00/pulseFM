@@ -361,7 +361,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
 
     try:
-        await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED")
+        await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED", winner_option=winner_option)
     except Exception:
         logger.warning("Redis unavailable for poll status update; continuing", extra={"voteId": vote_id})
 
