@@ -54,12 +54,6 @@ resource "google_project_iam_member" "eventarc_pubsub_subscriber" {
   member  = "serviceAccount:${google_service_account.eventarc.email}"
 }
 
-resource "google_project_iam_member" "vote_api_tasks" {
-  project = var.project_id
-  role    = "roles/cloudtasks.enqueuer"
-  member  = "serviceAccount:${google_service_account.vote_api.email}"
-}
-
 resource "google_project_iam_member" "vote_api_vpc_access" {
   project = var.project_id
   role    = "roles/vpcaccess.user"
@@ -208,12 +202,6 @@ resource "google_service_account_iam_member" "cloudbuild_impersonate_terraform" 
   service_account_id = google_service_account.terraform.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:cloud-build-deployer@${var.project_id}.iam.gserviceaccount.com"
-}
-
-resource "google_service_account_iam_member" "cloudtasks_token_creator" {
-  service_account_id = google_service_account.vote_api.name
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 }
 
 resource "google_service_account_iam_member" "cloudtasks_token_creator_playback" {
