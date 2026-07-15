@@ -1,5 +1,18 @@
+# Rootdir-level pytest config so multi-directory runs (services + packages)
+# still get async test support; per-package configs only apply when pytest's
+# rootdir resolves to that package.
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.uv.workspace]
 members = ["services/*", "packages/*", "functions/*"]
+# These functions ship requirements.txt only (no pyproject.toml), so they
+# cannot be uv workspace members; without this exclude every uv command fails.
+exclude = [
+  "functions/heartbeat-ingress",
+  "functions/heartbeat-receiver",
+  "functions/next-song-updater",
+]
 
 [tool.uv.sources]
 pulsefm-models = { workspace = true }

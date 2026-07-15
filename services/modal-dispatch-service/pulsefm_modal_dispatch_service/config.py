@@ -9,6 +9,7 @@ class Settings:
     warmup_lead_seconds: int = int(os.getenv("WARMUP_LEAD_SECONDS", "30"))
     scale_down_retry_horizon_seconds: int = int(os.getenv("SCALE_DOWN_RETRY_HORIZON_SECONDS", "300"))
     scale_down_retry_delay_seconds: int = int(os.getenv("SCALE_DOWN_RETRY_DELAY_SECONDS", "5"))
+    generation_horizon_seconds: int = int(os.getenv("GENERATION_HORIZON_SECONDS", "600"))
 
     heartbeat_active_key: str = os.getenv("HEARTBEAT_ACTIVE_KEY", "pulsefm:heartbeat:active")
     close_done_ttl_seconds: int = int(os.getenv("CLOSE_DONE_TTL_SECONDS", "86400"))
