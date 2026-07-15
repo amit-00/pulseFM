@@ -5,6 +5,7 @@ resource "google_cloud_run_v2_service" "vote_api" {
 
   template {
     service_account = google_service_account.vote_api.email
+    timeout         = "30s"
     scaling {
       min_instance_count = 1
     }
@@ -65,6 +66,7 @@ resource "google_cloud_run_v2_service" "encoder" {
 
   template {
     service_account = google_service_account.encoder.email
+    timeout         = "300s"
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
@@ -114,6 +116,7 @@ resource "google_cloud_run_v2_service" "playback_service" {
 
   template {
     service_account = google_service_account.playback_service.email
+    timeout         = "120s"
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
@@ -228,6 +231,7 @@ resource "google_cloud_run_v2_service" "modal_dispatch_service" {
 
   template {
     service_account = google_service_account.modal_dispatch_service.email
+    timeout         = "60s"
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
@@ -263,12 +267,22 @@ resource "google_cloud_run_v2_service" "modal_dispatch_service" {
         value = tostring(google_redis_instance.memorystore.port)
       }
       env {
-        name  = "MODAL_TOKEN_ID"
-        value = var.modal_token_id
+        name = "MODAL_TOKEN_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.modal_token_id.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
-        name  = "MODAL_TOKEN_SECRET"
-        value = var.modal_token_secret
+        name = "MODAL_TOKEN_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.modal_token_secret.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "MODAL_APP_NAME"
@@ -297,6 +311,10 @@ resource "google_cloud_run_v2_service" "modal_dispatch_service" {
       env {
         name  = "SCALE_DOWN_RETRY_DELAY_SECONDS"
         value = "5"
+      }
+      env {
+        name  = "GENERATION_HORIZON_SECONDS"
+        value = "600"
       }
     }
   }
