@@ -265,6 +265,53 @@ async def vote_event(payload: Dict[str, Any]) -> Dict[str, str]:
     return {"status": "ignored"}
 
 
+def _check_generation_status(call_id: str) -> str:
+    try:
+        modal.functions.FunctionCall.from_id(call_id).get(timeout=0)
+        return "succeeded"
+    except TimeoutError:
+        return "running"
+    except Exception:
+        return "failed"
+
+
+async def _get_modal_call_id(vote_id: str) -> str | None:
+    try:
+        client = get_redis_client()
+        value = await client.get(_modal_call_key(vote_id))  # type: ignore[misc]
+        return str(value) if value else None
+    except Exception:
+        logger.warning("Redis unavailable for modal call id lookup", extra={"voteId": vote_id})
+        return None
+
+
+@app.post("/scaledown")
+async def scaledown(payload: Dict[str, Any]) -> Dict[str, str]:
+    vote_id = payload.get("voteId")
+    if not isinstance(vote_id, str) or not vote_id.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="voteId is required")
+
+    await _set_min_instances_zero_with_retry(vote_id)
+
+    generation = "unknown"
+    call_id = await _get_modal_call_id(vote_id)
+    if call_id:
+        generation = await asyncio.to_thread(_check_generation_status, call_id)
+
+    if generation == "failed":
+        logger.error(
+            "Modal generation failed; station will fall back to stubbed song",
+            extra={"voteId": vote_id, "callId": call_id},
+        )
+    elif generation == "running":
+        logger.warning(
+            "Modal generation still running at scale-down horizon",
+            extra={"voteId": vote_id, "callId": call_id},
+        )
+
+    return {"status": "ok", "generation": generation}
+
+
 @app.post("/warmup")
 async def warmup(payload: Dict[str, Any]) -> Dict[str, str]:
     vote_id = payload.get("voteId")

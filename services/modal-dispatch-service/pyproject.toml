@@ -22,7 +22,8 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "fakeredis[lua]",
-  "httpx",
+  # starlette 0.27 TestClient still passes app= to httpx.Client, removed in httpx 0.28
+  "httpx<0.28",
 ]
 
 [tool.pytest.ini_options]
