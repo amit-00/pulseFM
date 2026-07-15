@@ -88,10 +88,12 @@ async def init_poll_tally(client: redis.Redis, vote_id: str, options: list[str],
 
 
 async def init_poll_voted_set(client: redis.Redis, vote_id: str, ttl_seconds: int) -> None:
+    # The "__init__" sentinel must stay in the set: Redis deletes empty sets
+    # immediately, which would void the EXPIRE and leak the key forever once
+    # the first vote recreates it without a TTL.
     key = poll_voted_key(vote_id)
     pipeline = client.pipeline()
     pipeline.sadd(key, "__init__")
-    pipeline.srem(key, "__init__")
     pipeline.expire(key, max(1, int(ttl_seconds)))
     await pipeline.execute()
 
@@ -113,9 +115,11 @@ for i = 4, #ARGV, 2 do
 end
 redis.call("EXPIRE", tally_key, state_ttl)
 
+-- The "__init__" sentinel must stay in the set: an empty set is deleted by
+-- Redis immediately, which would turn the EXPIRE into a no-op and let the
+-- first vote recreate the key with no TTL (unbounded key leak).
 redis.call("DEL", voted_key)
 redis.call("SADD", voted_key, "__init__")
-redis.call("SREM", voted_key, "__init__")
 redis.call("EXPIRE", voted_key, state_ttl)
 
 return "ok"

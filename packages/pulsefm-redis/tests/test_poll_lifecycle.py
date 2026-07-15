@@ -46,19 +46,15 @@ async def test_poll_open_sets_ttls(client: FakeAsyncRedis) -> None:
     assert 0 < await client.ttl(poll_tally_key("v1")) <= 240
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN BUG (WP-E finding): POLL_OPEN_LUA runs SADD+SREM leaving the voted "
-        "set empty, so Redis deletes the key before EXPIRE runs (TTL == -2). The "
-        "voted set is later recreated by the first vote's SADD with NO TTL and "
-        "never expires. Fix belongs in POLL_OPEN_LUA/init_poll_voted_set; do not "
-        "weaken this assertion."
-    ),
-)
 async def test_poll_open_sets_voted_set_ttl(client: FakeAsyncRedis) -> None:
     await init_poll_open_atomic(client, "v1", _snapshot("v1"), 120, 240, ["a", "b"])
     assert 0 < await client.ttl(poll_voted_key("v1")) <= 240
+
+
+async def test_voted_set_sentinel_never_reads_as_a_vote(client: FakeAsyncRedis) -> None:
+    await init_poll_open_atomic(client, "v1", _snapshot("v1"), 120, 240, ["a", "b"])
+    assert not await has_voted_session(client, "v1", "sess-1")
+    assert await add_voted_session(client, "v1", "sess-1") is True
 
 
 async def test_snapshot_roundtrip_and_corrupt_json(client: FakeAsyncRedis) -> None:
