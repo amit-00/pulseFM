@@ -14,7 +14,6 @@ services:
       - SONGS_COLLECTION=songs
       - VOTE_STATE_COLLECTION=voteState
       - VOTE_EVENTS_TOPIC=vote-events
-      - PLAYBACK_EVENTS_TOPIC=playback
       - PLAYBACK_QUEUE_NAME=playback-queue
       - PLAYBACK_TICK_URL=${PLAYBACK_TICK_URL}
       - TASKS_OIDC_SERVICE_ACCOUNT=${TASKS_OIDC_SERVICE_ACCOUNT}

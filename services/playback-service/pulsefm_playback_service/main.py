@@ -256,11 +256,6 @@ def _publish_vote_event(
     publish_json(settings.project_id or None, settings.vote_events_topic, payload)
 
 
-def _publish_playback_event(event: str, payload: Dict[str, Any]) -> None:
-    event_payload = {"event": event, **payload}
-    publish_json(settings.project_id or None, settings.playback_events_topic, event_payload)
-
-
 # ---------------------------------------------------------------------------
 # Redis helpers
 # ---------------------------------------------------------------------------
@@ -351,7 +346,7 @@ async def _close_vote(db: AsyncClient, state: Dict[str, Any]) -> Dict[str, Any]:
     await db.collection(settings.vote_state_collection).document("current").set(window_doc)
 
     try:
-        await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED")
+        await set_playback_poll_status(get_redis_client(), vote_id, "CLOSED", winner_option=winner_option)
     except Exception:
         logger.warning("Redis unavailable for poll status update; continuing", extra={"voteId": vote_id})
 
@@ -541,14 +536,6 @@ def _build_playback_snapshot(rotation: SongRotationResult, window: Dict[str, Any
     }
 
 
-def _publish_changeover_events(rotation: SongRotationResult, request_version: int) -> None:
-    _publish_playback_event(
-        "NEXT-SONG-CHANGED",
-        {"voteId": rotation.next_vote_id, "durationMs": rotation.next_duration_ms, "version": request_version},
-    )
-    _publish_playback_event("CHANGEOVER", {"durationMs": rotation.duration_ms, "version": request_version})
-
-
 def _schedule_next_tasks(rotation: SongRotationResult, window: Dict[str, Any], request_version: int) -> None:
     if not settings.playback_tick_url:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PLAYBACK_TICK_URL is required")
@@ -706,15 +693,7 @@ async def refresh_next_song(payload: Dict[str, Any]) -> Dict[str, Any]:
     redis_changed: bool | None = None
     if result.get("action") in {"updated", "noop"}:
         try:
-            canonical_version = int(result.get("version") or 0)
             redis_changed = await _reconcile_next_song_snapshot(result)
-            if redis_changed:
-                canonical_vote_id = str(result["voteId"])
-                canonical_duration_ms = int(result["durationMs"])
-                _publish_playback_event(
-                    "NEXT-SONG-CHANGED",
-                    {"voteId": canonical_vote_id, "durationMs": canonical_duration_ms, "version": canonical_version},
-                )
         except Exception:
             logger.warning("Redis unavailable for next-song reconciliation; continuing", extra={"voteId": result.get("voteId")})
 
@@ -753,13 +732,6 @@ async def tick(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
     except Exception:
         logger.warning("Redis unavailable during tick; playback loop continues without Redis state", extra={"voteId": window.get("voteId")})
-
-    try:
-        _publish_changeover_events(rotation, request_version)
-    except Exception:
-        logger.exception("Failed to publish playback changeover", extra={"durationMs": rotation.duration_ms})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish changeover")
-    logger.info("Published playback changeover", extra={"durationMs": rotation.duration_ms})
 
     _schedule_next_tasks(rotation, window, request_version)
     return {"status": "ok", "version": request_version}

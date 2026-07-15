@@ -51,6 +51,7 @@ async def set_playback_poll_status(
     client: redis.Redis,
     vote_id: str,
     status: str,
+    winner_option: str | None = None,
 ) -> None:
     snapshot = await get_playback_current_snapshot(client)
     if not snapshot:
@@ -65,6 +66,8 @@ async def set_playback_poll_status(
         raise ValueError("playback current snapshot voteId mismatch")
 
     poll["status"] = status
+    if winner_option is not None:
+        poll["winnerOption"] = winner_option
     snapshot["poll"] = poll
 
     ttl = await client.ttl(playback_current_key())  # type: ignore[misc]

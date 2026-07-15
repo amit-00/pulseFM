@@ -160,10 +160,6 @@ resource "google_cloud_run_v2_service" "playback_service" {
         value = google_cloud_tasks_queue.playback_queue.name
       }
       env {
-        name  = "PLAYBACK_EVENTS_TOPIC"
-        value = google_pubsub_topic.playback_events.name
-      }
-      env {
         name  = "PLAYBACK_TICK_URL"
         value = "https://playback-service${local.cloud_run_url_suffix}"
       }
@@ -194,6 +190,7 @@ resource "google_cloud_run_v2_service" "playback_stream" {
 
   template {
     service_account = google_service_account.playback_stream.email
+    timeout         = "60s"
     vpc_access {
       connector = google_vpc_access_connector.memorystore.id
       egress    = "PRIVATE_RANGES_ONLY"
