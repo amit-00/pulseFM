@@ -1,20 +1,23 @@
 # Vote API
 
-FastAPI service for accepting votes and downloads with a session id header.
+FastAPI service for accepting votes with a session id header.
 
 ## Endpoints
-- `POST /vote` -> submits a vote (pre-checks dedupe via Redis, then enqueues)
-- `POST /downloads` -> signed URL for encoded audio
+- `POST /vote` -> records the vote atomically in Redis and returns the authoritative result
 - `GET /health`
 
-## Required env vars
-- `PROJECT_ID`
-- `LOCATION`
-- `TALLY_FUNCTION_URL`
+## HTTP contract for `POST /vote`
+- 200 `{"status": "ok"}` — counted
+- 409 `detail="Duplicate vote"` — this session already voted
+- 409 `detail="Vote closed"` — poll is no longer OPEN
+- 400 `detail="Invalid voteId"` — not the current poll
+- 400 `detail="Invalid option"` — unknown option
+- 503 `detail="Vote state unavailable"` — no playback snapshot in Redis
+- 503 `detail="Voting temporarily unavailable (Redis unreachable)"` — Redis error
 
-## Optional env vars
-- `VOTE_QUEUE_NAME` (default: `tally-queue`)
-- `TASKS_OIDC_SERVICE_ACCOUNT` (optional service account email for Cloud Tasks OIDC)
+## Required env vars
+- `REDIS_HOST`
+- `REDIS_PORT` (default: `6379`)
 
 ## Run locally
 ```
@@ -24,17 +27,7 @@ docker compose -f services/vote-api/docker-compose.yml up --build
 ## Session header
 All session-required endpoints expect `X-Session-Id`.
 
-## Cloud Tasks
-Votes are enqueued to the `tally-queue` Cloud Tasks queue with JSON payloads:
-```
-{
-  "voteId": "...",
-  "option": "...",
-  "sessionId": "...",
-  "votedAt": "2024-01-01T00:00:00Z",
-  "version": 1
-}
-```
-
 ## Dedupe
-Votes are pre-checked against the Redis `pulsefm:poll:{voteId}:voted` set before enqueueing.
+A single Lua script validates the current poll (voteId, OPEN status, option)
+and performs the dedupe against the Redis `pulsefm:poll:{voteId}:voted` set
+plus the tally increment in one atomic round-trip.
