@@ -1,15 +1,15 @@
 # PulseFM
 
-AI-generated radio playback with real-time voting, streaming state updates, and cloud-native orchestration on GCP.
+AI-generated radio playback with real-time voting, polled state updates, and cloud-native orchestration on GCP.
 
 ## Problem / Motivation
 
 PulseFM is built to run a continuous “station” where:
 
 - songs are generated from poll outcomes,
-- listeners vote in real time,
+- listeners vote in real time and get an authoritative result,
 - playback rotates automatically,
-- clients receive low-latency state/tally updates without polling.
+- clients stay in sync by polling a cheap, cache-served `/state` snapshot.
 
 The system prioritizes operational simplicity (Cloud Run + Cloud Functions + Redis + Firestore) and idempotent event processing over a monolithic backend.
 
@@ -24,27 +24,25 @@ PulseFM is a monorepo with:
 - Terraform infrastructure (`terraform/`).
 
 ```text
-Browser
+Browser (polls /api/playback/state every ~2s + jitter)
   -> Next.js (/client)
       -> vote-api (Cloud Run, OIDC)
-      -> playback-stream (Cloud Run, SSE proxy)
+      -> playback-stream (Cloud Run, polled GET /state)
       -> heartbeat-ingress (Cloud Function, OIDC)
+      -> /api/track/{voteId} -> V4 signed GCS URLs (private bucket)
 
 vote-api
-  -> Cloud Tasks (tally-queue)
-      -> tally-function (Cloud Function HTTP)
-          -> Redis tally/voted keys
-          -> Pub/Sub topic: tally
+  -> Redis (single atomic Lua call: validate + dedupe + tally)
+  <- authoritative result (200 ok / 409 duplicate / 409 closed / 400 / 503)
 
 playback-service (Cloud Run, scheduler via playback-queue)
   -> Firestore (stations, songs, voteState)
-  -> Redis snapshot/tally init
-  -> Pub/Sub topics: playback, vote-events
+  -> Redis snapshot/tally init (atomic poll-open Lua), winnerOption on close
+  -> Pub/Sub topic: vote-events (OPEN/CLOSE)
   -> Cloud Tasks (playback-queue: /tick + /vote/close)
 
 playback-stream (Cloud Run)
-  <- Eventarc (Pub/Sub -> /events/tally, /events/playback, /events/vote)
-  -> SSE to clients (/stream), snapshot API (/state)
+  -> GET /state: short-TTL read-through caches over Redis (Firestore fallback)
 
 encoder (Cloud Run, Eventarc GCS finalized on raw/*.wav)
   -> transcode wav->m4a (AAC 128k, 48k)
@@ -54,7 +52,8 @@ encoder (Cloud Run, Eventarc GCS finalized on raw/*.wav)
 modal-dispatch-service (Cloud Run)
   <- Eventarc vote-events OPEN/CLOSE
   -> schedule warmup via modal-dispatch-queue
-  -> invoke Modal worker generation
+  -> spawn Modal worker generation (fire-and-forget)
+  -> delayed /scaledown task: min_containers=0 + generation-failure logging
 ```
 
 ## Core Components
@@ -66,29 +65,21 @@ modal-dispatch-service (Cloud Run)
 - Server routes proxy to backend services:
   - `/api/vote`
   - `/api/playback/state`
-  - `/api/playback/stream`
+  - `/api/track/{voteId}` (mints cached V4 signed GCS URLs, see ADR 0006)
   - `/api/heartbeat`
   - `/api/session`, `/api/auth/*`
-- Uses Vercel OIDC + GCP Workload Identity Federation for keyless Cloud Run/Function invocation in production (`client/lib/server/cloud-run.ts`).
+- Playback state is polled (`client/lib/pollDiff.ts` + `client/hooks/useStreamPlayer.ts`): every 2 s + 0–500 ms jitter, a boundary wake just after song `endAt`, and an immediate refetch after voting. UI transitions come from diffing consecutive snapshots.
+- Uses Vercel OIDC + GCP Workload Identity Federation for keyless Cloud Run/Function invocation and GCS URL signing in production (`client/lib/server/cloud-run.ts`, `client/lib/server/gcs-signer.ts`).
 
 ### Vote API (`services/vote-api`)
 
-- FastAPI endpoint `POST /vote`.
-- Validates:
-  - `X-Session-Id` exists,
-  - `voteId` matches current poll in Redis snapshot,
-  - poll is `OPEN`,
-  - option exists in Redis tally hash,
-  - session not already in voted set.
-- Enqueues tally task to `tally-queue` targeting `tally-function`.
-
-### Tally Function (`functions/tally-function`)
-
-- HTTP Cloud Function called by Cloud Tasks.
-- Atomic dedupe + tally increment via Redis Lua script:
-  - `SADD pulsefm:poll:{voteId}:voted`
-  - `HINCRBY pulsefm:poll:{voteId}:tally {option} 1` only if first vote
-- Publishes `{voteId}` to Pub/Sub topic `tally`.
+- FastAPI endpoint `POST /vote`, synchronous and authoritative (ADR 0003).
+- One atomic Redis Lua call (`SUBMIT_VOTE_LUA` in `packages/pulsefm-redis`) validates and tallies in a single round-trip: snapshot exists, `voteId` is current, poll is `OPEN`, option exists in the tally hash, session not already in the voted set — then `SADD` + `HINCRBY` only on first vote.
+- The response is the result, not a promise:
+  - `200 {"status":"ok"}` — vote counted
+  - `409 Duplicate vote` / `409 Vote closed`
+  - `400 Invalid voteId` / `400 Invalid option`
+  - `503` — vote state unavailable or Redis unreachable (nothing was accepted)
 
 ### Playback Service (`services/playback-service`)
 
@@ -99,25 +90,16 @@ modal-dispatch-service (Cloud Run)
 - Responsibilities:
   - Rotate current/next song in Firestore transaction (`stations/main`, `songs/*`).
   - Close/open vote (`voteState/current`) on each tick.
-  - Build/update Redis snapshot key `pulsefm:playback:current`.
-  - Initialize Redis tally/voted keys for new vote atomically.
-  - Publish vote/playback events and schedule next tasks.
+  - Build/update Redis snapshot key `pulsefm:playback:current`; write `winnerOption` into the snapshot on vote close.
+  - Initialize Redis snapshot/tally/voted keys for a new vote atomically (`POLL_OPEN_LUA`).
+  - Publish `vote-events` OPEN/CLOSE and schedule next tasks.
 
 ### Playback Stream (`services/playback-stream`)
 
-- FastAPI endpoints:
-  - `GET /state`
-  - `GET /stream` (SSE)
-  - `POST /events/tally`, `/events/playback`, `/events/vote` (Eventarc targets)
-- Emits SSE events:
-  - `HELLO`
-  - `TALLY_SNAPSHOT`
-  - `TALLY_DELTA`
-  - `SONG_CHANGED`
-  - `NEXT-SONG-CHANGED`
-  - `VOTE_CLOSED`
-  - `HEARTBEAT`
-- Reads Redis first, Firestore fallback for snapshot reconstruction.
+- Polled read API (ADR 0002): `GET /state` and `GET /health` — no SSE, no event ingest.
+- `/state` serves the playback snapshot plus `poll.tallies`, `winnerOption`, `listeners`, and `redisAvailable` from short-TTL read-through caches: snapshot cached until the current song's `endAt`, tallies ~500 ms, listener count ~1 s.
+- Per-instance cache skew between replicas is bounded by those TTLs (~0.5–2 s) — a deliberate tradeoff.
+- Reads Redis first, Firestore fallback for snapshot reconstruction; degrades with `redisAvailable: false` when Redis is down.
 
 ### Encoder (`services/encoder`)
 
@@ -128,10 +110,12 @@ modal-dispatch-service (Cloud Run)
 
 ### Modal Dispatch Service (`services/modal-dispatch-service`)
 
-- Handles vote events:
+- Handles vote events (ADR 0004):
   - `OPEN`: schedule `/warmup` at `endAt - 30s` if active listeners.
-  - `CLOSE`: idempotent by `voteId`, scale Modal min instances to 1, dispatch generation, scale back to 0 with retry horizon.
+  - `CLOSE`: idempotent by `voteId`; scale Modal min instances to 1, `.spawn()` generation fire-and-forget (call id stored in Redis), then enqueue a delayed `POST /scaledown` Cloud Task (`modal-scaledown-{voteId}`, delay = `GENERATION_HORIZON_SECONDS`).
+  - `/scaledown`: idempotent; sets min instances back to 0 with retries and logs ERROR if the spawned generation failed (rotation falls back to the stubbed song).
 - Uses Redis heartbeat active key for listener-aware behavior.
+- Modal tokens are injected from Secret Manager, not plaintext env vars (ADR 0005).
 
 ### Modal Worker (`services/worker`)
 
@@ -161,35 +145,47 @@ modal-dispatch-service (Cloud Run)
 
 ## Key Design Decisions
 
-1. **Redis is canonical for live poll tallies/dedupe**
-   - Why: low-latency increments and reads.
-   - Tradeoff: Redis outage blocks voting/tally updates.
+Architecture decision records live in `docs/adr/`.
 
-2. **Version-gated `/tick` and idempotent close**
+1. **Redis is canonical for live poll tallies/dedupe**
+   - Why: low-latency atomic increments and reads.
+   - Tradeoff: Redis outage disables voting (503) until it recovers; playback keeps running via Firestore fallback.
+
+2. **Client polling instead of SSE** ([ADR 0002](docs/adr/0002-polling-over-sse.md))
+   - Why: SSE busy-polled per connection, pinned a Cloud Run concurrency slot per listener, and kept per-instance event state that replicas disagreed on.
+   - Tradeoff: tallies are up to ~2 s stale; changeover stays tight via a poll scheduled at the song boundary.
+
+3. **Synchronous, authoritative vote tally** ([ADR 0003](docs/adr/0003-synchronous-vote-tally.md))
+   - Why: the async Cloud Tasks path returned 200 before the authoritative dedupe — votes could silently fail to count.
+   - Tradeoff: loses queue spike-buffering; the single Lua call is O(1) and the real ceilings are far beyond hobby scale.
+
+4. **Version-gated `/tick` and idempotent close**
    - Why: tolerate retries and out-of-order task delivery.
    - Tradeoff: requires strict version propagation from scheduler/tasks.
 
-3. **Firestore keeps playback/vote state; Redis caches live snapshot**
+5. **Firestore keeps playback/vote state; Redis caches live snapshot**
    - Why: durable control-plane state + fast read path.
    - Tradeoff: dual-write paths require reconciliation logic.
 
-4. **Pub/Sub + Eventarc fan-out for stream/reactive updates**
-   - Why: decouples producers from stream consumers.
-   - Tradeoff: event ordering is not strict; client/state reconciliation needed.
+6. **Pub/Sub + Eventarc for vote lifecycle events**
+   - Why: decouples playback orchestration from Modal dispatch.
+   - Tradeoff: at-least-once delivery; the consumer is idempotent by `voteId`. Only the `vote-events` topic remains — the `tally` and `playback` topics were deleted with their consumers (ADRs 0002/0003).
 
-5. **OIDC keyless server-to-server auth from Vercel**
+7. **OIDC keyless server-to-server auth from Vercel**
    - Why: avoids static service account keys for Next.js backend.
    - Tradeoff: WIF configuration complexity and IAM dependencies.
 
-6. **Modal dispatch separated from playback orchestration**
-   - Why: isolates long-running generation and warmup lifecycle.
-   - Tradeoff: extra service and queue to operate.
+8. **Modal dispatch separated from playback orchestration** ([ADR 0004](docs/adr/0004-modal-spawn-dispatch.md))
+   - Why: isolates GPU generation and the warmup/scale-down lifecycle; `.spawn()` + a delayed scale-down task means no webhook ever blocks on generation.
+   - Tradeoff: extra service and queue to operate; generation failures surface as ERROR logs, not request errors.
 
 ## Tradeoffs & Limitations
 
+- Tally freshness is bounded by the poll interval (~2 s + jitter) plus the server-side tally cache (≤500 ms).
+- Playback-stream replicas may briefly disagree: per-instance cache skew is bounded by the cache TTLs (~0.5–2 s).
 - Playback-stream listener counting scans Redis keys; cost/perf depends on key cardinality.
-- Minimal automated test coverage in current repo.
-- Media is currently served from public GCS object URLs (no CDN edge cache).
+- Signed track URLs have unique query strings, which defeat shared HTTP caches — GCS egress grows with listener count ([ADR 0006](docs/adr/0006-signed-urls-for-audio.md)). First thing to revisit if scale outweighs privacy.
+- Memorystore basic tier: tallies/dedupe are lost on failover; users may re-vote once (accepted).
 
 ## Getting Started (Local Dev)
 
@@ -228,16 +224,18 @@ npm install
 | `GCP_SERVICE_ACCOUNT_EMAIL`              | prod OIDC          | usually `nextjs-server@...`       |
 | `GCP_WORKLOAD_IDENTITY_POOL_ID`          | prod OIDC          | Terraform output                  |
 | `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID` | prod OIDC          | Terraform output                  |
-| `NEXT_PUBLIC_CDN_BASE_URL`               | optional           | e.g. `https://cdn.pulsefm.fm`     |
-| `NEXT_PUBLIC_BUCKET_BASE_URL`            | optional           | fallback base URL                 |
+| `GCS_SONGS_BUCKET`                       | optional           | signed-URL bucket (default `pulsefm-generated-songs`) |
+| `GCS_SONGS_PREFIX`                       | optional           | signed-URL object prefix (default `encoded/`) |
+
+Audio is resolved through `/api/track/{voteId}` signed URLs; there is no public bucket/CDN base URL.
 
 #### Core service envs
 
-- `vote-api`: `PROJECT_ID`, `LOCATION`, `VOTE_QUEUE_NAME`, `TALLY_FUNCTION_URL`, `REDIS_HOST`, `REDIS_PORT`
-- `playback-service`: `PROJECT_ID`, `LOCATION`, `PLAYBACK_TICK_URL`, `PLAYBACK_QUEUE_NAME`, topic names, Firestore collection names, Redis host/port
-- `playback-stream`: `REDIS_HOST`, `REDIS_PORT`, stream interval vars
+- `vote-api`: `REDIS_HOST`, `REDIS_PORT`
+- `playback-service`: `PROJECT_ID`, `LOCATION`, `PLAYBACK_TICK_URL`, `PLAYBACK_QUEUE_NAME`, `VOTE_EVENTS_TOPIC`, Firestore collection names, Redis host/port
+- `playback-stream`: `REDIS_HOST`, `REDIS_PORT`, Firestore collection names
 - `encoder`: bucket/prefix vars, Redis host/port
-- `modal-dispatch-service`: modal token vars, queue URL/name, Redis host/port
+- `modal-dispatch-service`: `MODAL_QUEUE_NAME`, `MODAL_DISPATCH_SERVICE_URL`, `GENERATION_HORIZON_SECONDS`, warmup/scale-down tuning vars, Redis host/port; `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` are injected from Secret Manager via `secret_key_ref` (ADR 0005), not set by hand
 
 ### Run locally
 
@@ -268,17 +266,22 @@ Default local port mappings:
 
 ## Testing
 
-Current automated tests are minimal:
+Python suites (behavioral tests run Lua against `fakeredis[lua]` — including the poll-open atomics and the voted-set TTL sentinel):
 
-- `packages/pulsefm-auth/tests/test_session.py`
+- `packages/pulsefm-redis/tests` — `SUBMIT_VOTE_LUA` / `POLL_OPEN_LUA` behavior, snapshot helpers
+- `packages/pulsefm-auth/tests` — session handling
+- `services/vote-api/tests` — synchronous vote endpoint contract
+- `services/playback-service/tests` — rotation decision logic, close-vote orchestration
+- `services/playback-stream/tests` — `/state` caching and staleness
+- `services/modal-dispatch-service/tests` — close-event spawn path, `/scaledown`
 
-Run:
+Run everything:
 
 ```bash
-uv run pytest packages/pulsefm-auth/tests
+uv run pytest packages/ services/
 ```
 
-There is no comprehensive integration/e2e test suite in-repo for the multi-service flow.
+CI (`.github/workflows/ci.yml`) runs `uv sync --all-packages` + the same pytest invocation on PRs and pushes to main. The client has no test runner; it is gated by `tsc` typecheck and `next build`, with polling/diff logic kept in pure functions (`client/lib/pollDiff.ts`) for future tests. There is no integration/e2e suite for the multi-service flow.
 
 ## API / Interfaces
 
@@ -306,16 +309,16 @@ curl -X POST "$VOTE_API_URL/vote" \
 ### Playback Stream (Cloud Run)
 
 - `GET /state`
-- `GET /stream` (SSE)
-- Event ingest endpoints for Eventarc:
-  - `POST /events/tally`
-  - `POST /events/playback`
-  - `POST /events/vote`
+- `GET /health`
+
+### Modal Dispatch Service (Cloud Run)
+
+- `POST /events/vote` (Eventarc target, OPEN/CLOSE)
+- `POST /warmup`, `POST /scaledown` (Cloud Tasks targets)
 - `GET /health`
 
 ### Cloud Functions
 
-- `tally-function` (HTTP)
 - `heartbeat-ingress` (HTTP)
 - `heartbeat-receiver` (Pub/Sub event)
 - `next-song-updater` (GCS finalized event)
@@ -332,7 +335,7 @@ terraform apply
 
 Remote state backend is configured to GCS bucket `pulsefm-terraform-state` (`terraform/backend.tf`).
 
-Audio delivery currently uses direct public object URLs from `pulsefm-generated-songs`.
+The `pulsefm-generated-songs` bucket is private; audio is delivered via V4 signed URLs minted by the Next.js server ([ADR 0006](docs/adr/0006-signed-urls-for-audio.md)).
 
 ### Cloud Build pipeline
 
@@ -344,17 +347,9 @@ Audio delivery currently uses direct public object URLs from `pulsefm-generated-
 
 Cloud Build trigger management is intentionally outside Terraform.
 
-### Cloudflare backend boilerplate (phase 1)
+### Cloudflare migration (historical)
 
-Cloudflare migration scaffolding is now available for backend services under:
-
-- `infra/cloudflare/`
-- `scripts/cloudflare/`
-- `docs/cloudflare/`
-- `.github/workflows/cloudflare-validate.yml`
-- `.github/workflows/cloudflare-deploy.yml`
-
-Phase 1 is intentionally non-deploying and resource-free. It does not create or deploy Workers, Pages, routes, or storage bindings.
+A Cloudflare Workers backend migration was attempted and abandoned in March 2026; no Cloudflare code remains in the repo. See [ADR 0001](docs/adr/0001-cloudflare-migration-attempt.md) for the history.
 
 ### Bootstrap image script
 
@@ -378,18 +373,19 @@ For first deploy/bootstrap tags:
   - local: ADC ID token client,
   - production: Vercel OIDC + GCP WIF + IAM Credentials generateIdToken.
 - Cloud Run invoker IAM is scoped (not all public) except `playback-stream` which is intentionally public.
-- GCS `pulsefm-generated-songs` currently grants `roles/storage.objectViewer` to `allUsers` at bucket level (public reads).
+- GCS `pulsefm-generated-songs` is private (no `allUsers` binding). Audio is served via session-gated V4 signed URLs minted with IAM `signBlob` over WIF ([ADR 0006](docs/adr/0006-signed-urls-for-audio.md)).
+- Modal tokens live in Secret Manager with a scoped `secretAccessor` binding, consumed via `secret_key_ref` ([ADR 0005](docs/adr/0005-secret-manager-for-modal-tokens.md)); note the residual risk that Terraform-managed secret versions persist in TF state.
 - `terraform.tfvars` and local credentials are excluded from version control in your workflow.
 
 ## Future Improvements
 
-1. Add Cloud CDN in front of `pulsefm-generated-songs/encoded/*` to reduce global latency, improve cache hit ratios for hot tracks, and offload bucket egress bursts.
-2. Add load tests for SSE fanout and Redis hot-key behavior.
+1. Add a CDN with signed cookies/tokens in front of `pulsefm-generated-songs/encoded/*` if egress from unique signed URLs becomes a cost problem (ADR 0006's revisit point).
+2. Add load tests for `/state` polling fan-out and Redis hot-key behavior.
 3. Replace Redis `SCAN`-based listener counting with a cardinality-friendly pattern.
-4. Add DLQ/replay strategy for task/event failures.
+4. Add DLQ/replay strategy for the remaining queues (`playback-queue`, `modal-dispatch-queue`) and Eventarc deliveries.
 5. Add explicit schema validation for Pub/Sub payloads across services.
 6. Add OpenAPI docs and contract tests for internal endpoints.
-7. Add CI workflow (lint/test/typecheck/build) before Cloud Build deploy.
+7. Extend CI with lint/typecheck and a client build gate (Python tests already run on PRs).
 8. Add secret scanning + policy checks in CI.
 9. Add vote history persistence sink if analytics/auditing is required.
 10. Add dashboards/alerts for Redis errors, task retry spikes, and Eventarc delivery failures.
