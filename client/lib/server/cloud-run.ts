@@ -82,10 +82,11 @@ async function getAuthHeadersLocal(targetAudience: string): Promise<Headers> {
     localIdTokenClients.set(targetAudience, client);
   }
 
+  // google-auth-library v9 returns a plain header record here (v10 returns Headers)
   const requestHeaders = await client.getRequestHeaders();
 
   const headers = new Headers();
-  headers.set("Authorization", requestHeaders.get("Authorization") || "");
+  headers.set("Authorization", requestHeaders["Authorization"] || "");
   return headers;
 }
 

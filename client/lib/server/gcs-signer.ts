@@ -21,11 +21,6 @@ function requireEnv(name: string): string {
   return value;
 }
 
-type SignerAuthBridge = {
-  getCredentials: () => Promise<{ client_email: string }>;
-  sign: (data: string) => Promise<string>;
-};
-
 async function getStorage(): Promise<Storage> {
   if (storage) return storage;
 
@@ -50,23 +45,12 @@ async function getStorage(): Promise<Storage> {
     lifetime: 3600,
   });
 
-  const gcs = new Storage({ projectId: requireEnv("GCP_PROJECT_ID") });
-
-  // Version-skew bridge: @google-cloud/storage@7 bundles google-auth-library@9
-  // while this repo uses v10, so passing the v10 Impersonated client as
-  // `authClient` fails at runtime — storage's internal v9 GoogleAuth wrapper
-  // resolves credentials through `instanceof Impersonated` fast-paths that a
-  // v10 instance never matches, and URL signing falls through to ADC discovery.
-  // Replicate those exact fast-paths (v9 googleauth.js: getCredentialsAsync and
-  // sign) so getSignedUrl signs via the impersonated IAM Credentials signBlob.
-  const authBridge = gcs.authClient as unknown as SignerAuthBridge;
-  authBridge.getCredentials = async () => ({ client_email: targetPrincipal });
-  authBridge.sign = async (data: string) => {
-    const { signedBlob } = await impersonated.sign(data);
-    return signedBlob;
-  };
-
-  storage = gcs;
+  // The repo pins google-auth-library to the same major @google-cloud/storage
+  // depends on (v9) so npm dedupes to one copy and Storage's internal
+  // `instanceof Impersonated` credential/signing fast-paths match this client.
+  // If either package's major changes, re-verify with `npm ls google-auth-library`
+  // that it still dedupes — a split copy silently breaks getSignedUrl.
+  storage = new Storage({ projectId: requireEnv("GCP_PROJECT_ID"), authClient: impersonated });
   return storage;
 }
 
