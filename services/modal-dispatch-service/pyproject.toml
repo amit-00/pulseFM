@@ -17,6 +17,17 @@ dependencies = [
   "pulsefm-tasks",
 ]
 
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "fakeredis[lua]",
+  "httpx",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pulsefm_modal_dispatch_service*"]

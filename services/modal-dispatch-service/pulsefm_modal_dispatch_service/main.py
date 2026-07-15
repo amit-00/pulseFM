@@ -42,6 +42,17 @@ def _warmup_url() -> str:
     return f"{base}/warmup"
 
 
+def _modal_call_key(vote_id: str) -> str:
+    return f"pulsefm:modal:call:{vote_id}"
+
+
+def _scaledown_url() -> str:
+    base = settings.modal_dispatch_service_url.rstrip("/")
+    if not base:
+        raise ValueError("MODAL_DISPATCH_SERVICE_URL is required")
+    return f"{base}/scaledown"
+
+
 def _parse_end_at_ms(value: Any) -> int:
     if isinstance(value, int):
         return value
@@ -74,18 +85,26 @@ def _set_modal_min_instances(min_instances: int) -> None:
     cls().update_autoscaler(min_containers=min_instances)
 
 
-def _dispatch_modal_generation(vote_id: str, winner_option: str) -> None:
+def _spawn_modal_generation(vote_id: str, winner_option: str) -> str:
     descriptor = _get_descriptor(winner_option)
-
     music_cls = modal.Cls.from_name(settings.modal_app_name, settings.modal_class_name)
     generator = music_cls()
     method = getattr(generator, settings.modal_method_name)
-    method.remote(
+    call = method.spawn(
         genre=descriptor["genre"],
         mood=descriptor["mood"],
         energy=descriptor["energy"],
         vote_id=vote_id,
     )
+    return str(call.object_id)
+
+
+async def _store_modal_call_id(vote_id: str, call_id: str) -> None:
+    try:
+        client = get_redis_client()
+        await client.set(_modal_call_key(vote_id), call_id, ex=max(60, settings.generation_horizon_seconds * 2))  # type: ignore[misc]
+    except Exception:
+        logger.warning("Redis unavailable for storing modal call id", extra={"voteId": vote_id})
 
 
 async def _set_min_instances(min_instances: int) -> None:
@@ -215,10 +234,19 @@ async def _handle_close_event(message: Dict[str, Any]) -> Dict[str, str]:
         await _set_min_instances(1)
         logger.info("Scaled modal min_instances to 1", extra={"voteId": vote_id})
 
-        await asyncio.to_thread(_dispatch_modal_generation, vote_id, winner_option)
-        logger.info("Modal generation completed", extra={"voteId": vote_id, "winnerOption": winner_option})
+        call_id = await asyncio.to_thread(_spawn_modal_generation, vote_id, winner_option)
+        await _store_modal_call_id(vote_id, call_id)
+        logger.info("Modal generation spawned", extra={"voteId": vote_id, "callId": call_id})
 
-        await _set_min_instances_zero_with_retry(vote_id)
+        enqueue_json_task_with_delay(
+            settings.modal_queue_name,
+            _scaledown_url(),
+            {"voteId": vote_id},
+            settings.generation_horizon_seconds,
+            task_id=f"modal-scaledown-{vote_id}",
+            ignore_already_exists=True,
+        )
+
         await _mark_close_done(vote_id)
         return {"status": "ok"}
     finally:
