@@ -168,18 +168,41 @@ async def get_poll_tallies(client: redis.Redis, vote_id: str) -> dict[str, int]:
     return tallies
 
 
-VOTE_LUA = """
-local voted_key = KEYS[1]
+SUBMIT_VOTE_LUA = """
+local playback_key = KEYS[1]
 local tally_key = KEYS[2]
-local session_id = ARGV[1]
-local option = ARGV[2]
+local voted_key = KEYS[3]
 
-local added = redis.call("SADD", voted_key, session_id)
-if added == 1 then
-  redis.call("HINCRBY", tally_key, option, 1)
-  return 1
+local vote_id = ARGV[1]
+local session_id = ARGV[2]
+local option = ARGV[3]
+
+local raw = redis.call("GET", playback_key)
+if not raw then
+  return "no_state"
 end
-return 0
+
+local ok, snapshot = pcall(cjson.decode, raw)
+if not ok or type(snapshot) ~= "table" or type(snapshot["poll"]) ~= "table" then
+  return "no_state"
+end
+
+local poll = snapshot["poll"]
+if poll["voteId"] ~= vote_id then
+  return "not_current"
+end
+if poll["status"] ~= "OPEN" then
+  return "closed"
+end
+if redis.call("HEXISTS", tally_key, option) == 0 then
+  return "invalid_option"
+end
+
+if redis.call("SADD", voted_key, session_id) == 1 then
+  redis.call("HINCRBY", tally_key, option, 1)
+  return "ok"
+end
+return "duplicate"
 """
 
 
@@ -190,8 +213,20 @@ async def ping_redis(client: redis.Redis) -> bool:
         return False
 
 
-async def record_vote_atomic(client: redis.Redis, vote_id: str, session_id: str, option: str) -> bool:
-    voted_key = poll_voted_key(vote_id)
-    tally_key = poll_tally_key(vote_id)
-    result = await client.eval(VOTE_LUA, 2, voted_key, tally_key, session_id, option)  # type: ignore[misc]
-    return int(result) == 1
+async def submit_vote_atomic(
+    client: redis.Redis,
+    vote_id: str,
+    session_id: str,
+    option: str,
+) -> str:
+    result = await client.eval(
+        SUBMIT_VOTE_LUA,
+        3,
+        playback_current_key(),
+        poll_tally_key(vote_id),
+        poll_voted_key(vote_id),
+        vote_id,
+        session_id,
+        option,
+    )  # type: ignore[misc]
+    return str(result)
