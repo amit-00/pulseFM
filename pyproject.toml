@@ -1,5 +1,12 @@
 [tool.uv.workspace]
 members = ["services/*", "packages/*", "functions/*"]
+# These Cloud Functions are requirements.txt-based, not uv packages; without
+# pyproject.toml they break the `functions/*` member glob during `uv sync`.
+exclude = [
+  "functions/heartbeat-ingress",
+  "functions/heartbeat-receiver",
+  "functions/next-song-updater",
+]
 
 [tool.uv.sources]
 pulsefm-models = { workspace = true }
